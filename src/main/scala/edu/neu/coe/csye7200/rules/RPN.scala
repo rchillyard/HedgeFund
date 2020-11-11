@@ -36,7 +36,7 @@ case class Invalid[X](t: Throwable) extends Token[X] with Evaluable[X] {
   */
 case class RPN[X: Valuable](stack: List[Token[X]]) extends Token[X] with Evaluable[X] {
 
-  def push(t: Token[X]) = RPN(t :: stack)
+  def push(t: Token[X]): RPN[X] = RPN(t :: stack)
 
   def evaluate: Try[X] = {
     // CONSIDER moving this into implicit parameter

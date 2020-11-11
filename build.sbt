@@ -1,4 +1,4 @@
-name := "LabActors"
+name := "HedgeFund"
 
 version := "1.0"
 

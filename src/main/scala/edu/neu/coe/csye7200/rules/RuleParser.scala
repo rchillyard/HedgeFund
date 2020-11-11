@@ -176,7 +176,7 @@ class RuleParser extends JavaTokenParsers {
   // CONSIDER implement this...
   //  private val lesserOp = regex("""<|<=""".r)
   private val identifier = regex("""\w+""".r)
-  private val identifierWithPeriods = regex("""[\w\.]+""".r)
+  private val identifierWithPeriods = regex("""[\w.]+""".r)
   private val doubleQuote = """"""".r
 
   abstract class ExprFactor extends Expression

@@ -18,16 +18,13 @@ import scala.util._
   *
   *         TODO migrate entire package from spray http to akka http
   */
-object HedgeFund {
+object HedgeFund extends App {
 
-  def main(args: Array[String]): Unit = {
-    val config = ConfigFactory.load()
-    println(s"""${config.getString("name")}, ${config.getString("appVersion")}""")
-    implicit val system: ActorSystem = ActorSystem("HedgeFund")
-    startup(config)
-    Thread.sleep(10000)
-    Await.ready(system.terminate(), FiniteDuration(1, "second"))
-  }
+  val config = ConfigFactory.load()
+  println(s"""${config.getString("name")}, ${config.getString("appVersion")}""")
+  implicit val system: ActorSystem = ActorSystem("HedgeFund")
+  startup(config)
+  Await.ready(system.terminate(), FiniteDuration(1, "second"))
 
   def startup(config: Config)(implicit system: ActorSystem): Try[ActorRef] = {
     val engine: Option[Query] = config.getString("engine") match {

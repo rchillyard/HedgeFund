@@ -114,7 +114,7 @@ trait Valuable[X] extends Orderable[X] {
     * @param x an operand
     * @return f(x) as a Try[X]
     */
-  def function1(f: (Double) => Double)(x: X): Try[X]
+  def function1(f: Double => Double)(x: X): Try[X]
 
   /**
     * The dyadic function method for arbitrary functions of Double operand(s)
@@ -131,27 +131,27 @@ object Valuable {
   def apply[X: Valuable]: Valuable[X] = implicitly[Valuable[X]]
 
   trait ValuableDouble extends OrderableDouble with Valuable[Double] {
-    def plus(x: Double, y: Double) = Try(x + y)
+    def plus(x: Double, y: Double): Try[Double] = Try(x + y)
 
-    def minus(x: Double, y: Double) = Try(x - y)
+    def minus(x: Double, y: Double): Try[Double] = Try(x - y)
 
     def negate(x: Double): Try[Double] = minus(zero, x)
 
-    def times(x: Double, y: Double) = Try(x * y)
+    def times(x: Double, y: Double): Try[Double] = Try(x * y)
 
-    def div(x: Double, y: Double) = Try(x / y)
+    def div(x: Double, y: Double): Try[Double] = Try(x / y)
 
     def invert(x: Double): Try[Double] = div(one, x)
 
     def pow(x: Double, y: Double): Try[Double] = Try(math.pow(x, y))
 
-    def fromInt(x: Int) = Try(x.toDouble)
+    def fromInt(x: Int): Try[Double] = Try(x.toDouble)
 
     def one = 1.0
 
     def function0(f: () => Double): Try[Double] = Try(f())
 
-    def function1(f: (Double) => Double)(x: Double): Try[Double] = Try(f(x))
+    def function1(f: Double => Double)(x: Double): Try[Double] = Try(f(x))
 
     def function2(f: (Double, Double) => Double)(x: Double, y: Double): Try[Double] = Try(f(x, y))
   }
@@ -159,27 +159,27 @@ object Valuable {
   implicit object ValuableDouble extends ValuableDouble
 
   trait ValuableInt extends OrderableInt with Valuable[Int] {
-    def plus(x: Int, y: Int) = Try(x + y)
+    def plus(x: Int, y: Int): Try[Int] = Try(x + y)
 
-    def minus(x: Int, y: Int) = Try(x - y)
+    def minus(x: Int, y: Int): Try[Int] = Try(x - y)
 
     def negate(x: Int): Try[Int] = minus(zero, x)
 
-    def times(x: Int, y: Int) = Try(x * y)
+    def times(x: Int, y: Int): Try[Int] = Try(x * y)
 
-    def div(x: Int, y: Int) = Try(if (x % y == 0) x / y else throw new ValuableException("integer division leaves remainder"))
+    def div(x: Int, y: Int): Try[Int] = Try(if (x % y == 0) x / y else throw new ValuableException("integer division leaves remainder"))
 
-    def invert(x: Int) = Failure(new ValuableException("cannot invert an Int"))
+    def invert(x: Int): Try[Int] = Failure(new ValuableException("cannot invert an Int"))
 
     def pow(x: Int, y: Int): Try[Int] = Try(Seq.fill[Int](y)(x).product)
 
-    def fromInt(x: Int) = Success(x)
+    def fromInt(x: Int): Try[Int] = Success(x)
 
     def one = 1
 
     def function0(f: () => Double): Try[Int] = Failure(new ValuableException("cannot apply an arbitrary function0 for Int"))
 
-    def function1(f: (Double) => Double)(x: Int): Try[Int] = Failure(new ValuableException("cannot apply an arbitrary function1 for Int"))
+    def function1(f: Double => Double)(x: Int): Try[Int] = Failure(new ValuableException("cannot apply an arbitrary function1 for Int"))
 
     def function2(f: (Double, Double) => Double)(x: Int, y: Int): Try[Int] = Failure(new ValuableException("cannot apply an arbitrary function2 for Int"))
   }
@@ -187,27 +187,27 @@ object Valuable {
   implicit object ValuableInt extends ValuableInt
 
   trait ValuableLong extends OrderableLong with Valuable[Long] {
-    def plus(x: Long, y: Long) = Try(x + y)
+    def plus(x: Long, y: Long): Try[Long] = Try(x + y)
 
-    def minus(x: Long, y: Long) = Try(x - y)
+    def minus(x: Long, y: Long): Try[Long] = Try(x - y)
 
     def negate(x: Long): Try[Long] = minus(zero, x)
 
-    def times(x: Long, y: Long) = Try(x * y)
+    def times(x: Long, y: Long): Try[Long] = Try(x * y)
 
-    def div(x: Long, y: Long) = Try(if (x % y == 0) x / y else throw new ValuableException("integer division leaves remainder"))
+    def div(x: Long, y: Long): Try[Long] = Try(if (x % y == 0) x / y else throw new ValuableException("integer division leaves remainder"))
 
-    def invert(x: Long) = Failure(new ValuableException("cannot invert an Long"))
+    def invert(x: Long): Try[Long] = Failure(new ValuableException("cannot invert an Long"))
 
     def pow(x: Long, y: Long): Try[Long] = Try(Seq.fill[Int](y.toInt)(x.toInt).product)
 
-    def fromInt(x: Int) = Success(x.toLong)
+    def fromInt(x: Int): Try[Long] = Success(x.toLong)
 
     def one = 1
 
     def function0(f: () => Double): Try[Long] = Failure(new ValuableException("cannot apply an arbitrary function0 for Long"))
 
-    def function1(f: (Double) => Double)(x: Long): Try[Long] = Failure(new ValuableException("cannot apply an arbitrary function1 for Long"))
+    def function1(f: Double => Double)(x: Long): Try[Long] = Failure(new ValuableException("cannot apply an arbitrary function1 for Long"))
 
     def function2(f: (Double, Double) => Double)(x: Long, y: Long): Try[Long] = Failure(new ValuableException("cannot apply an arbitrary function2 for Long"))
   }

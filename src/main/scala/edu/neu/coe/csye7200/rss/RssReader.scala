@@ -5,7 +5,7 @@ import java.text.SimpleDateFormat
 import java.util.{Date, Locale}
 
 import akka.actor.{Actor, ActorSystem, Props}
-import akka.event.Logging
+import akka.event.{Logging, LoggingAdapter}
 import akka.pattern.ask
 import akka.util.Timeout
 
@@ -15,7 +15,7 @@ import scala.util.{Failure, Success, Try}
 import scala.xml.{Elem, NodeSeq, XML}
 
 abstract class Reader extends Actor {
-  val log = Logging(context.system, this)
+  val log: LoggingAdapter = Logging(context.system, this)
 
   def print(feed: RssFeed) {
     println(feed.latest)
@@ -98,7 +98,7 @@ class XmlReader extends Reader {
 }
 
 class RssReader extends Actor {
-  val log = Logging(context.system, this)
+  val log: LoggingAdapter = Logging(context.system, this)
 
   def printToFile(f: java.io.File)(op: java.io.PrintWriter => Unit) {
     val p = new java.io.PrintWriter(f)

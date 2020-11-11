@@ -104,7 +104,7 @@ object Orderable {
   trait OrderableInt extends Orderable[Int] {
     def unit(x: Int): Int = x
 
-    def viaLookup(k: String, f: (String) => Option[Int]): Try[Int] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
+    def viaLookup(k: String, f: String => Option[Int]): Try[Int] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
 
     def fromString(s: String)(implicit pattern: String): Try[Int] = Try(s.toInt)
 
@@ -118,7 +118,7 @@ object Orderable {
   trait OrderableLong extends Orderable[Long] {
     def unit(x: Long): Long = x
 
-    def viaLookup(k: String, f: (String) => Option[Long]): Try[Long] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
+    def viaLookup(k: String, f: String => Option[Long]): Try[Long] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
 
     def fromString(s: String)(implicit pattern: String): Try[Long] = Try(s.toLong)
 
@@ -132,7 +132,7 @@ object Orderable {
   trait OrderableDouble extends Orderable[Double] {
     def unit(x: Double): Double = x
 
-    def fromString(s: String)(implicit pattern: String = "") = Try(s.toDouble)
+    def fromString(s: String)(implicit pattern: String = ""): Try[Double] = Try(s.toDouble)
 
     def viaLookup(k: String, f: String => Option[Double]): Try[Double] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
 
@@ -146,7 +146,7 @@ object Orderable {
   trait OrderableString extends Orderable[String] {
     def unit(x: String): String = x
 
-    def viaLookup(k: String, f: (String) => Option[String]): Try[String] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
+    def viaLookup(k: String, f: String => Option[String]): Try[String] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
 
     def fromString(s: String)(implicit pattern: String): Try[String] = Success(s)
 
@@ -160,7 +160,7 @@ object Orderable {
   trait OrderableLocalDate extends Orderable[LocalDate] {
     def unit(x: LocalDate): LocalDate = x
 
-    def viaLookup(k: String, f: (String) => Option[LocalDate]): Try[LocalDate] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
+    def viaLookup(k: String, f: String => Option[LocalDate]): Try[LocalDate] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
 
     def fromString(s: String)(implicit pattern: String): Try[LocalDate] = Try(LocalDate.parse(s, if (pattern.isEmpty) isoFormatter else formatter(pattern)))
 
@@ -181,7 +181,7 @@ object Orderable {
   trait OrderableBoolean extends Orderable[Boolean] {
     def unit(x: Boolean): Boolean = x
 
-    def viaLookup(k: String, f: (String) => Option[Boolean]): Try[Boolean] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
+    def viaLookup(k: String, f: String => Option[Boolean]): Try[Boolean] = optionToTry(f(k), new OrderableException(s"$k is not defined"))
 
     def fromString(s: String)(implicit pattern: String): Try[Boolean] = Try(s.toBoolean)
 

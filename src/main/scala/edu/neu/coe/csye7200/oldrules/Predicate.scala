@@ -5,7 +5,7 @@ import scala.util._
 /**
   * @author robinhillyard
   */
-trait Predicate extends ((Candidate) => Try[Boolean]) {
+trait Predicate extends (Candidate => Try[Boolean]) {
   def &(p: Predicate): Predicate = ComposedPredicate(this, p, Predicate.and)
 
   def |(p: Predicate): Predicate = ComposedPredicate(this, p, Predicate.or)
@@ -43,9 +43,9 @@ case class ComposedPredicate(p1: Predicate, p2: Predicate, f: (Boolean, Boolean)
 
 
 case object Always extends Predicate {
-  def apply(candidate: Candidate) = Success(true)
+  def apply(candidate: Candidate): Try[Boolean] = Success(true)
 }
 
 case object Never extends Predicate {
-  def apply(candidate: Candidate) = Success(false)
+  def apply(candidate: Candidate): Try[Boolean] = Success(false)
 }

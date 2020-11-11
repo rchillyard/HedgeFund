@@ -170,7 +170,7 @@ case class OptionCandidate(put: Boolean, model: Model, id: String, optionDetails
     }
   }
 
-  def ++(m: Map[String, Any]) = OptionCandidate(put, model, identifier, optionDetails, chainDetails ++ m)
+  def ++(m: Map[String, Any]): Candidate = OptionCandidate(put, model, identifier, optionDetails, chainDetails ++ m)
 
   override def toString = s"OptionCandidate: identifier=$identifier; details=$details"
 }

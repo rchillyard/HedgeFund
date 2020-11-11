@@ -61,7 +61,7 @@ trait Predicate[T] extends (T => Try[Boolean]) {
     * @param p the other Predicate
     * @return a Predicate which is the conjunctive (and) combination of p with self
     */
-  def &:(p: T => Try[Boolean]) = And(Predicate(p), self)
+  def &:(p: T => Try[Boolean]): And[T] = And(Predicate(p), self)
 
   /**
     * Conjunctive combination of self with another Predicate such that
@@ -74,7 +74,7 @@ trait Predicate[T] extends (T => Try[Boolean]) {
     * @param p the other Predicate
     * @return a Predicate which is the conjunctive (and) combination of p with self
     */
-  def &:(p: Predicate[T]) = And(Predicate(p), self)
+  def &:(p: Predicate[T]): And[T] = And(Predicate(p), self)
 
   /**
     * Disjunctive combination of self with another Predicate such that
@@ -87,7 +87,7 @@ trait Predicate[T] extends (T => Try[Boolean]) {
     * @param p the other Predicate
     * @return a Predicate which is the disjunctive (or) combination of p with self
     */
-  def |:(p: T => Try[Boolean]) = Or(Predicate(p), self)
+  def |:(p: T => Try[Boolean]): Or[T] = Or(Predicate(p), self)
 
   /**
     * Conjunctive combination of self with another Predicate such that
@@ -98,7 +98,7 @@ trait Predicate[T] extends (T => Try[Boolean]) {
     * @param p the other Predicate (p will not be evaluated if self evaluates as false)
     * @return a Predicate which is the conjunctive (and) combination of self with p
     */
-  def :&(p: T => Try[Boolean]) = And(self, Predicate(p))
+  def :&(p: T => Try[Boolean]): And[T] = And(self, Predicate(p))
 
   /**
     * Disjunctive combination of self with another Predicate such that
@@ -109,7 +109,7 @@ trait Predicate[T] extends (T => Try[Boolean]) {
     * @param p the other Predicate (p will not be evaluated if self evaluates as true)
     * @return a Predicate which is the disjunctive (or) combination of self with p
     */
-  def :|(p: T => Try[Boolean]) = Or(self, Predicate(p))
+  def :|(p: T => Try[Boolean]): Or[T] = Or(self, Predicate(p))
 
   /**
     * Conjunctive combination of self with another Predicate such that
@@ -122,7 +122,7 @@ trait Predicate[T] extends (T => Try[Boolean]) {
     * @param f the other function T=>Boolean (f will not be evaluated if self evaluates as false)
     * @return a Predicate which is the conjunctive (and) combination of f with self
     */
-  def &^:(f: T => Boolean) = And(Func(f), self)
+  def &^:(f: T => Boolean): And[T] = And(Func(f), self)
 
   /**
     * Disjunctive combination of self with another Predicate such that
@@ -135,7 +135,7 @@ trait Predicate[T] extends (T => Try[Boolean]) {
     * @param f a T=>Boolean function
     * @return a Predicate which is the disjunctive (or) combination of p with self
     */
-  def |^:(f: T => Boolean) = Or(Func(f), self)
+  def |^:(f: T => Boolean): Or[T] = Or(Func(f), self)
 
   /**
     * Conjunctive combination of self with another Predicate such that
@@ -146,7 +146,7 @@ trait Predicate[T] extends (T => Try[Boolean]) {
     * @param f the other Predicate (p will not be evaluated if self evaluates as false)
     * @return a Predicate which is the conjunctive (and) combination of self with p
     */
-  def :^&(f: T => Boolean) = And(self, Func(f))
+  def :^&(f: T => Boolean): And[T] = And(self, Func(f))
 
   /**
     * Disjunctive combination of self with another Predicate such that
@@ -157,7 +157,7 @@ trait Predicate[T] extends (T => Try[Boolean]) {
     * @param f the other function T=>Boolean (f will not be evaluated if self evaluates as true)
     * @return a Predicate which is the disjunctive (or) combination of self with f
     */
-  def :^|(f: T => Boolean) = Or(self, Func(f))
+  def :^|(f: T => Boolean): Or[T] = Or(self, Func(f))
 }
 
 /**
@@ -192,8 +192,8 @@ case class And[T](p1: Predicate[T], p2: Predicate[T]) extends BasePredicate[T](s
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = for (q1 <- p1 tryMap f; q2 <- p2 tryMap f) yield And(q1, q2)
+    * */
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = for (q1 <- p1 tryMap f; q2 <- p2 tryMap f) yield And(q1, q2)
 }
 
 /**
@@ -215,8 +215,8 @@ case class Or[T](p1: Predicate[T], p2: Predicate[T]) extends BasePredicate[T](s"
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = for (q1 <- p1 tryMap f; q2 <- p2 tryMap f) yield Or(q1, q2)
+    * */
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = for (q1 <- p1 tryMap f; q2 <- p2 tryMap f) yield Or(q1, q2)
 
 }
 
@@ -228,7 +228,7 @@ case class Or[T](p1: Predicate[T], p2: Predicate[T]) extends BasePredicate[T](s"
   */
 case class GT[T: Ordering](y: T) extends BasePredicate[T](s">$y") {
   self =>
-  def apply(x: T) = Try(implicitly[Ordering[T]].gt(x, y))
+  def apply(x: T): Try[Boolean] = Try(implicitly[Ordering[T]].gt(x, y))
 
   /**
     * The tryMap function for Predicate. Note that for operators such as >, <=, etc. it is essential
@@ -239,8 +239,8 @@ case class GT[T: Ordering](y: T) extends BasePredicate[T](s">$y") {
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield GT(u)
+    * */
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield GT(u)
 }
 
 /**
@@ -250,7 +250,7 @@ case class GT[T: Ordering](y: T) extends BasePredicate[T](s">$y") {
   * @tparam T the underlying type of the Predicate, which must implement Ordering
   */
 case class LT[T: Ordering](y: T) extends BasePredicate[T](s"<$y") {
-  def apply(x: T) = Try(implicitly[Ordering[T]].lt(x, y))
+  def apply(x: T): Try[Boolean] = Try(implicitly[Ordering[T]].lt(x, y))
 
   /**
     * The tryMap function for Predicate. Note that for operators such as >, <=, etc. it is essential
@@ -261,8 +261,8 @@ case class LT[T: Ordering](y: T) extends BasePredicate[T](s"<$y") {
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield LT(u)
+    * */
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield LT(u)
 }
 
 /**
@@ -272,7 +272,7 @@ case class LT[T: Ordering](y: T) extends BasePredicate[T](s"<$y") {
   * @tparam T the underlying type of the Predicate, which must implement Ordering
   */
 case class GE[T: Ordering](y: T) extends BasePredicate[T](s">=$y") {
-  def apply(x: T) = Try(implicitly[Ordering[T]].gteq(x, y))
+  def apply(x: T): Try[Boolean] = Try(implicitly[Ordering[T]].gteq(x, y))
 
   /**
     * The tryMap function for Predicate. Note that for operators such as >, <=, etc. it is essential
@@ -283,8 +283,8 @@ case class GE[T: Ordering](y: T) extends BasePredicate[T](s">=$y") {
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield GE(u)
+    * */
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield GE(u)
 }
 
 /**
@@ -294,7 +294,7 @@ case class GE[T: Ordering](y: T) extends BasePredicate[T](s">=$y") {
   * @tparam T the underlying type of the Predicate, which must implement Ordering
   */
 case class LE[T: Ordering](y: T) extends BasePredicate[T](s"<=$y") {
-  def apply(x: T) = Try(implicitly[Ordering[T]].lteq(x, y))
+  def apply(x: T): Try[Boolean] = Try(implicitly[Ordering[T]].lteq(x, y))
 
   /**
     * The tryMap function for Predicate. Note that for operators such as >, <=, etc. it is essential
@@ -305,8 +305,8 @@ case class LE[T: Ordering](y: T) extends BasePredicate[T](s"<=$y") {
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield LE(u)
+    * */
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield LE(u)
 }
 
 /**
@@ -316,7 +316,7 @@ case class LE[T: Ordering](y: T) extends BasePredicate[T](s"<=$y") {
   * @tparam T the underlying type of the Predicate, which must implement Ordering
   */
 case class EQ[T: Ordering](y: T) extends BasePredicate[T](s"=$y") {
-  def apply(x: T) = Try(implicitly[Ordering[T]].equiv(x, y))
+  def apply(x: T): Try[Boolean] = Try(implicitly[Ordering[T]].equiv(x, y))
 
   /**
     * The tryMap function for Predicate. Note that for operators such as >, <=, etc. it is essential
@@ -327,8 +327,8 @@ case class EQ[T: Ordering](y: T) extends BasePredicate[T](s"=$y") {
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield EQ(u)
+    * */
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield EQ(u)
 }
 
 /**
@@ -338,7 +338,7 @@ case class EQ[T: Ordering](y: T) extends BasePredicate[T](s"=$y") {
   * @tparam T the underlying type of the Predicate, which must implement Ordering
   */
 case class NE[T: Ordering](y: T) extends BasePredicate[T](s"!=$y") {
-  def apply(x: T) = Try(!implicitly[Ordering[T]].equiv(x, y))
+  def apply(x: T): Try[Boolean] = Try(!implicitly[Ordering[T]].equiv(x, y))
 
   /**
     * The tryMap function for Predicate. Note that for operators such as >, <=, etc. it is essential
@@ -349,8 +349,8 @@ case class NE[T: Ordering](y: T) extends BasePredicate[T](s"!=$y") {
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield NE(u)
+    * */
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = for (u <- f(y)) yield NE(u)
 }
 
 /**
@@ -360,7 +360,7 @@ case class NE[T: Ordering](y: T) extends BasePredicate[T](s"!=$y") {
   * @tparam T the underlying type of the Predicate, which must implement Ordering
   */
 case class Func[T](p: T => Boolean) extends BasePredicate[T](s"function $p") {
-  def apply(x: T) = Try(p(x))
+  def apply(x: T): Try[Boolean] = Try(p(x))
 
   /**
     * The tryMap function for Predicate. Note that for operators such as >, <=, etc. it is essential
@@ -371,8 +371,8 @@ case class Func[T](p: T => Boolean) extends BasePredicate[T](s"function $p") {
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = throw new PredicateException("NYI: Func.tryMap")
+    * */
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = throw new PredicateException("NYI: Func.tryMap")
 }
 
 /**
@@ -391,8 +391,8 @@ case class Pred[T, V](p: Predicate[V])(f: T => V) extends BasePredicate[T](s"$p 
     * @param g a function which transforms a T into a Try[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](g: (T) => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI: Pred.tryMap"))
+    * */
+  def tryMap[U: Ordering](g: T => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI: Pred.tryMap"))
 }
 
 /**
@@ -402,15 +402,15 @@ case class Pred[T, V](p: Predicate[V])(f: T => V) extends BasePredicate[T](s"$p 
   * @tparam A the underlying type of the sequence
   */
 case class In[A](as: List[A]) extends BasePredicate[A](s"in $as...") {
-  def apply(x: A) = Try(as.contains(x))
+  def apply(x: A): Try[Boolean] = Try(as.contains(x))
 
   /**
     *
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (A) => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI: In.tryMap"))
+    * */
+  def tryMap[U: Ordering](f: A => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI: In.tryMap"))
 }
 
 /**
@@ -420,7 +420,7 @@ case class In[A](as: List[A]) extends BasePredicate[A](s"in $as...") {
   * @tparam T the underlying type of the Predicate
   */
 case class Matches[T](f: PartialFunction[T, Boolean]) extends BasePredicate[T](s"matches $f") {
-  def apply(x: T) = Try(f.isDefinedAt(x) && f(x))
+  def apply(x: T): Try[Boolean] = Try(f.isDefinedAt(x) && f(x))
 
   /**
     * The map function for Predicate. Note that for operators such as >, <=, etc. it is essential
@@ -432,7 +432,7 @@ case class Matches[T](f: PartialFunction[T, Boolean]) extends BasePredicate[T](s
     * @tparam U the underlying type of the resulting Predicate
     * @return a Predicate[U]
     */
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI: Matches.tryMap"))
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI: Matches.tryMap"))
 }
 
 /**
@@ -441,7 +441,7 @@ case class Matches[T](f: PartialFunction[T, Boolean]) extends BasePredicate[T](s
   * @param r a Range
   */
 case class InRange(r: Range) extends BasePredicate[Int](s"in $r") {
-  def apply(x: Int) = Try(r.contains(x))
+  def apply(x: Int): Try[Boolean] = Try(r.contains(x))
 
   /**
     * The map function for Predicate. Note that for operators such as >, <=, etc. it is essential
@@ -453,7 +453,7 @@ case class InRange(r: Range) extends BasePredicate[Int](s"in $r") {
     * @tparam U the underlying type of the resulting Predicate
     * @return a Predicate[U]
     */
-  def tryMap[U: Ordering](f: (Int) => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI: InRange.tryMap"))
+  def tryMap[U: Ordering](f: Int => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI: InRange.tryMap"))
 }
 
 /**
@@ -476,7 +476,7 @@ case class InBounds[T: Ordering](min: T, max: T) extends BasePredicate[T](s"in b
     * @tparam U the underlying type of the resulting Predicate
     * @return a Predicate[U]
     */
-  def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = for (q1 <- f(min); q2 <- f(max)) yield InBounds(q1, q2)
+  def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = for (q1 <- f(min); q2 <- f(max)) yield InBounds(q1, q2)
 }
 
 /**
@@ -496,8 +496,8 @@ case object Always extends BasePredicate[Any]("true") {
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (Any) => Try[U]): Try[Predicate[U]] = Success(new BasePredicate[U]("Always mapped") {
+    * */
+  def tryMap[U: Ordering](f: Any => Try[U]): Try[Predicate[U]] = Success(new BasePredicate[U]("Always mapped") {
     /**
       * The tryMap function for Predicate. Note that for operators such as >, <=, etc. it is essential
       * that the mapping between T and U be isomorphic.
@@ -507,8 +507,8 @@ case object Always extends BasePredicate[Any]("true") {
       * @param f the map function, an T=>Predicate[U]
       * @tparam V the underlying type of the resulting Predicate
       * @return a Try[Predicate[U]
-      **/
-    def tryMap[V: Ordering](f: (U) => Try[V]): Try[Predicate[V]] = Failure(new PredicateException("NYI: apply.tryMap"))
+      * */
+    def tryMap[V: Ordering](f: U => Try[V]): Try[Predicate[V]] = Failure(new PredicateException("NYI: apply.tryMap"))
 
     /**
       *
@@ -531,8 +531,8 @@ case object Never extends BasePredicate[Any]("false") {
     * @param f the map function, an T=>Predicate[U]
     * @tparam U the underlying type of the resulting Predicate
     * @return a Try[Predicate[U]
-    **/
-  def tryMap[U: Ordering](f: (Any) => Try[U]): Try[Predicate[U]] = Success(new BasePredicate[U]("Always mapped") {
+    * */
+  def tryMap[U: Ordering](f: Any => Try[U]): Try[Predicate[U]] = Success(new BasePredicate[U]("Always mapped") {
     /**
       * The tryMap function for Predicate. Note that for operators such as >, <=, etc. it is essential
       * that the mapping between T and U be isomorphic.
@@ -542,8 +542,8 @@ case object Never extends BasePredicate[Any]("false") {
       * @param f the map function, an T=>Predicate[U]
       * @tparam V the underlying type of the resulting Predicate
       * @return a Try[Predicate[U]
-      **/
-    def tryMap[V: Ordering](f: (U) => Try[V]): Try[Predicate[V]] = Failure(new PredicateException("NYI: apply.tryMap"))
+      * */
+    def tryMap[V: Ordering](f: U => Try[V]): Try[Predicate[V]] = Failure(new PredicateException("NYI: apply.tryMap"))
 
     def apply(v1: U): Try[Boolean] = Success(false)
   })
@@ -552,7 +552,7 @@ case object Never extends BasePredicate[Any]("false") {
 case class InvalidPredicate(x: Throwable) extends BasePredicate[Any](s"invalid: $x") {
   def apply(t: Any): Try[Boolean] = Failure(x)
 
-  def tryMap[U: Ordering](f: (Any) => Try[U]): Try[Predicate[U]] = Success(InvalidPredicate(x).asInstanceOf[Predicate[U]])
+  def tryMap[U: Ordering](f: Any => Try[U]): Try[Predicate[U]] = Success(InvalidPredicate(x).asInstanceOf[Predicate[U]])
 }
 
 class PredicateException(s: String) extends Exception(s"rule problem: $s")
@@ -567,7 +567,7 @@ object Predicate {
     */
   def apply[T](p: T => Try[Boolean]): Predicate[T] = new BasePredicate[T](s"$p") {
     self =>
-    def tryMap[U: Ordering](f: (T) => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI apply.map"))
+    def tryMap[U: Ordering](f: T => Try[U]): Try[Predicate[U]] = Failure(new PredicateException("NYI apply.map"))
 
     def apply(t: T): Try[Boolean] = p(t)
   }

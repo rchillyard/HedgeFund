@@ -17,7 +17,7 @@ import scala.language.postfixOps
   */
 class UpdateLogger(blackboard: ActorRef) extends BlackboardActor(blackboard) {
 
-  var portfolio = Portfolio("", Nil)
+  var portfolio: Portfolio = Portfolio("", Nil)
 
   override def receive: PartialFunction[Any, Unit] = {
     case Confirmation(id, model, attrs) =>
