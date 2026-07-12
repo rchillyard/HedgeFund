@@ -12,6 +12,7 @@ object ProviderRegistry {
   val providers: Map[String, MarketDataProvider] = Map(
     "YQL" -> YQLProvider,
     "Google" -> GoogleProvider,
-    "AlphaVantage" -> AlphaVantageProvider
+    "AlphaVantage" -> AlphaVantageProvider,
+    "Finnhub" -> FinnhubProvider
   )
 }

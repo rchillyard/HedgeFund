@@ -3,6 +3,7 @@ package edu.neu.coe.csye7200.cache
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
 import edu.neu.coe.csye7200.portfolio.Portfolio
+import edu.neu.coe.csye7200.providers.MarketDataProvider
 import org.slf4j.Logger
 
 import scala.concurrent.duration.FiniteDuration
@@ -16,9 +17,9 @@ import scala.concurrent.duration.FiniteDuration
   */
 object PriceCacheApp {
 
-  def apply(portfolio: Portfolio, ttl: FiniteDuration, ruleCheckInterval: FiniteDuration, log: Logger): Behavior[Nothing] =
+  def apply(portfolio: Portfolio, ttl: FiniteDuration, ruleCheckInterval: FiniteDuration, provider: MarketDataProvider, log: Logger): Behavior[Nothing] =
     Behaviors.setup[Nothing] { context =>
-      val priceCacheManager = context.spawn(PriceCacheManager(ttl), "priceCacheManager")
+      val priceCacheManager = context.spawn(PriceCacheManager(ttl, provider), "priceCacheManager")
       context.spawn(RuleCheckActor(portfolio, priceCacheManager, ruleCheckInterval, log), "ruleCheckActor")
       Behaviors.empty
     }

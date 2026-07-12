@@ -4,6 +4,7 @@ import akka.actor.typed.scaladsl.AskPattern._
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior, Scheduler}
 import akka.util.Timeout
+import edu.neu.coe.csye7200.providers.MarketDataProvider
 
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future}
@@ -18,7 +19,7 @@ case class GetPriceFor(symbol: String, replyTo: ActorRef[PriceResponse])
   */
 object PriceCacheManager {
 
-  def apply(ttl: FiniteDuration): Behavior[GetPriceFor] = Behaviors.setup { context =>
+  def apply(ttl: FiniteDuration, provider: MarketDataProvider): Behavior[GetPriceFor] = Behaviors.setup { context =>
     def active(children: Map[String, ActorRef[PriceCacheCommand]]): Behavior[GetPriceFor] =
       Behaviors.receiveMessage {
         case GetPriceFor(symbol, replyTo) =>
@@ -27,7 +28,7 @@ object PriceCacheManager {
               child ! GetPrice(replyTo)
               Behaviors.same
             case None =>
-              val child = context.spawn(PriceCacheActor(symbol, ttl), s"price-$symbol")
+              val child = context.spawn(PriceCacheActor(symbol, ttl, provider), s"price-$symbol")
               child ! GetPrice(replyTo)
               active(children + (symbol -> child))
           }

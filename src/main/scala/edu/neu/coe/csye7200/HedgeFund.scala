@@ -10,7 +10,7 @@ import edu.neu.coe.csye7200.actors.{ExternalLookup, HedgeFundBlackboard, HedgeFu
 import edu.neu.coe.csye7200.cache.PriceCacheApp
 import edu.neu.coe.csye7200.model.GoogleOptionQuery
 import edu.neu.coe.csye7200.portfolio.{Portfolio, PortfolioParser}
-import edu.neu.coe.csye7200.providers.{AlphaVantageProvider, ProviderRegistry}
+import edu.neu.coe.csye7200.providers.ProviderRegistry
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.util.concurrent.TimeUnit
@@ -115,47 +115,57 @@ object HedgeFund {
   */
 @main def hedgeFundApp(): Unit = {
   val config = ConfigFactory.load()
-  println(s"""${config.getString("name")}, ${config.getString("appVersion")}""")
+  println(s"""${config.getString("name")}, ${BuildInfo.version}""")
 
-  // Validated once, eagerly, so a missing API key fails fast and clearly at startup rather
-  // than lazily inside whichever PriceCacheActor happens to attempt the first fetch.
-  Try(AlphaVantageProvider.query) match {
-    case Failure(x) =>
-      println(s"startup failed: ${x.getMessage}")
-      HedgeFund.logger.error("startup failed: {}", x.getMessage)
+  // Same provider selection HedgeFund.startup uses, so switching application.conf's `engine`
+  // (e.g. AlphaVantage -> Finnhub once one provider's free-tier quota runs out) works uniformly
+  // for both the legacy one-shot flow and this long-running one.
+  ProviderRegistry.providers.get(config.getString("engine")) match {
+    case None =>
+      println(s"""startup failed: unknown engine ${config.getString("engine")}""")
+      HedgeFund.logger.error("startup failed: unknown engine {}", config.getString("engine"))
 
-    case Success(_) =>
-      HedgeFund.getPortfolio(config) match {
-        case None =>
-          println("startup failed: could not load portfolio")
-          HedgeFund.logger.error("startup failed: could not load portfolio")
+    case Some(provider) =>
+      // Validated once, eagerly, so a missing API key fails fast and clearly at startup rather
+      // than lazily inside whichever PriceCacheActor happens to attempt the first fetch.
+      Try(provider.query) match {
+        case Failure(x) =>
+          println(s"startup failed: ${x.getMessage}")
+          HedgeFund.logger.error("startup failed: {}", x.getMessage)
 
-        case Some(portfolio) =>
-          def durationOf(key: String): FiniteDuration = FiniteDuration(config.getDuration(key).toNanos, TimeUnit.NANOSECONDS)
+        case Success(_) =>
+          HedgeFund.getPortfolio(config) match {
+            case None =>
+              println("startup failed: could not load portfolio")
+              HedgeFund.logger.error("startup failed: could not load portfolio")
 
-          val ttl = durationOf("priceCache.ttl")
-          val ruleCheckInterval = durationOf("ruleCheck.interval")
+            case Some(portfolio) =>
+              def durationOf(key: String): FiniteDuration = FiniteDuration(config.getDuration(key).toNanos, TimeUnit.NANOSECONDS)
 
-          val system: ActorSystem[Nothing] =
-            ActorSystem(PriceCacheApp(portfolio, ttl, ruleCheckInterval, HedgeFund.logger), "HedgeFundPriceCache")
+              val ttl = durationOf("priceCache.ttl")
+              val ruleCheckInterval = durationOf("ruleCheck.interval")
 
-          // Same graceful-shutdown fix as the old startup flow needed (see git history), just
-          // registered as a CoordinatedShutdown task instead of run inline, since shutdown here
-          // is triggered externally (Ctrl+C) rather than by an explicit system.terminate() call.
-          implicit val ec: scala.concurrent.ExecutionContext = system.executionContext
-          CoordinatedShutdown(system.toClassic).addTask(CoordinatedShutdown.PhaseServiceUnbind, "shutdown-connection-pools") { () =>
-            Http(system.toClassic).shutdownAllConnectionPools().map { _ =>
-              Thread.sleep(2000)
-              Done
-            }
+              val system: ActorSystem[Nothing] =
+                ActorSystem(PriceCacheApp(portfolio, ttl, ruleCheckInterval, provider, HedgeFund.logger), "HedgeFundPriceCache")
+
+              // Same graceful-shutdown fix as the old startup flow needed (see git history), just
+              // registered as a CoordinatedShutdown task instead of run inline, since shutdown here
+              // is triggered externally (Ctrl+C) rather than by an explicit system.terminate() call.
+              implicit val ec: scala.concurrent.ExecutionContext = system.executionContext
+              CoordinatedShutdown(system.toClassic).addTask(CoordinatedShutdown.PhaseServiceUnbind, "shutdown-connection-pools") { () =>
+                Http(system.toClassic).shutdownAllConnectionPools().map { _ =>
+                  Thread.sleep(2000)
+                  Done
+                }
+              }
+
+              // Without this, the @main method's body simply returns right after spawning the
+              // actor system (nothing above blocks), so the JVM -- or sbt's runMain in particular --
+              // tears the whole thing down within a couple of seconds instead of actually running
+              // until Ctrl+C. Blocks the main thread until the JVM shutdown hook eventually calls
+              // system.terminate() (installed automatically by Typed's ActorSystem).
+              Await.ready(system.whenTerminated, scala.concurrent.duration.Duration.Inf)
           }
-
-          // Without this, the @main method's body simply returns right after spawning the
-          // actor system (nothing above blocks), so the JVM -- or sbt's runMain in particular --
-          // tears the whole thing down within a couple of seconds instead of actually running
-          // until Ctrl+C. Blocks the main thread until the JVM shutdown hook eventually calls
-          // system.terminate() (installed automatically by Typed's ActorSystem).
-          Await.ready(system.whenTerminated, scala.concurrent.duration.Duration.Inf)
       }
   }
 }

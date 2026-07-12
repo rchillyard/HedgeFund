@@ -1,10 +1,12 @@
 package edu.neu.coe.csye7200.providers
 
 import akka.actor.typed.{ActorRef, Behavior}
+import akka.http.scaladsl.model.HttpEntity
 import edu.neu.coe.csye7200.actors.{ContentMessage, HedgeFundCommand, JsonAlphaVantageParser}
 import edu.neu.coe.csye7200.model.{AlphaVantageModel, AlphaVantageQuery, Model, Query}
 
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 /**
   * Alpha Vantage's free `GLOBAL_QUOTE` endpoint -- the first genuinely live provider registered
@@ -41,4 +43,18 @@ object AlphaVantageProvider extends MarketDataProvider {
   // can eat several hundred ms, shrinking the effective gap between the first two requests
   // well below the configured interval. 2s leaves enough margin to absorb that.
   override def requestInterval: FiniteDuration = 2.seconds
+
+  override def decodePrice(symbol: String, entity: HttpEntity.Strict): Try[Double] =
+    JsonAlphaVantageParser.decode(entity) match {
+      case Right(response) =>
+        (model.getKey("price"), response.get("Global Quote")) match {
+          case (Some(priceKey), Some(quote)) =>
+            quote.get(priceKey) match {
+              case Some(s) => Try(s.toDouble)
+              case None => Failure(new Exception(s"no '$priceKey' field for $symbol"))
+            }
+          case _ => Failure(new Exception(s"could not decode price for $symbol"))
+        }
+      case Left(err) => Failure(new Exception(err.errorMessage))
+    }
 }

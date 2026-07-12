@@ -4,9 +4,8 @@ import akka.actor.typed.scaladsl.adapter._
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.{HttpEntity, HttpRequest}
-import edu.neu.coe.csye7200.actors.JsonAlphaVantageParser
-import edu.neu.coe.csye7200.providers.AlphaVantageProvider
+import akka.http.scaladsl.model.HttpRequest
+import edu.neu.coe.csye7200.providers.MarketDataProvider
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -25,20 +24,20 @@ case class PriceResponse(symbol: String, price: Try[Double])
 /**
   * One actor per symbol, caching its most recently fetched price until `ttl` elapses, at which
   * point the cached value is evicted (not eagerly refetched) so the next `GetPrice` triggers a
-  * fresh fetch. Fetches go directly to Alpha Vantage (`AlphaVantageProvider.query` + `Http` +
-  * `JsonAlphaVantageParser.decode`) rather than through `HedgeFundBlackboard`/`EntityParser`,
-  * which is shaped for a different problem (broadcast N lookups at startup, no per-request
-  * correlation back to a specific asker).
+  * fresh fetch. Fetches go directly through the configured `MarketDataProvider` (`query` + `Http`
+  * + `decodePrice`) rather than through `HedgeFundBlackboard`/`EntityParser`, which is shaped for
+  * a different problem (broadcast N lookups at startup, no per-request correlation back to a
+  * specific asker).
   *
   * @author robinhillyard
   */
 object PriceCacheActor {
 
-  def apply(symbol: String, ttl: FiniteDuration): Behavior[PriceCacheCommand] =
+  def apply(symbol: String, ttl: FiniteDuration, provider: MarketDataProvider): Behavior[PriceCacheCommand] =
     Behaviors.setup { context =>
       implicit val system: akka.actor.typed.ActorSystem[_] = context.system
       implicit val ec: scala.concurrent.ExecutionContext = context.executionContext
-      withFetcher(symbol, ttl, () => fetchFromAlphaVantage(symbol))
+      withFetcher(symbol, ttl, () => fetchPrice(symbol, provider))
     }
 
   /**
@@ -92,25 +91,11 @@ object PriceCacheActor {
         Behaviors.same
     }
 
-  private def fetchFromAlphaVantage(symbol: String)(implicit system: akka.actor.typed.ActorSystem[_], ec: scala.concurrent.ExecutionContext): Future[Double] =
+  private def fetchPrice(symbol: String, provider: MarketDataProvider)(implicit system: akka.actor.typed.ActorSystem[_], ec: scala.concurrent.ExecutionContext): Future[Double] =
     for {
-      query <- Future.fromTry(Try(AlphaVantageProvider.query))
+      query <- Future.fromTry(Try(provider.query))
       response <- Http(system.toClassic).singleRequest(HttpRequest(uri = query.createQuery(List(symbol))))
       strict <- response.entity.toStrict(10.seconds)
-      price <- Future.fromTry(decodePrice(symbol, strict))
+      price <- Future.fromTry(provider.decodePrice(symbol, strict))
     } yield price
-
-  private def decodePrice(symbol: String, entity: HttpEntity.Strict): Try[Double] =
-    JsonAlphaVantageParser.decode(entity) match {
-      case Right(response) =>
-        (AlphaVantageProvider.model.getKey("price"), response.get("Global Quote")) match {
-          case (Some(priceKey), Some(quote)) =>
-            quote.get(priceKey) match {
-              case Some(s) => Try(s.toDouble)
-              case None => Failure(new Exception(s"no '$priceKey' field for $symbol"))
-            }
-          case _ => Failure(new Exception(s"could not decode price for $symbol"))
-        }
-      case Left(err) => Failure(new Exception(err.errorMessage))
-    }
 }
