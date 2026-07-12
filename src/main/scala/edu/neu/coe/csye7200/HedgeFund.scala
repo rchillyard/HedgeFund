@@ -1,6 +1,8 @@
 package edu.neu.coe.csye7200
 
+import akka.actor.typed.scaladsl.adapter._
 import akka.actor.typed.{ActorRef, ActorSystem}
+import akka.http.scaladsl.Http
 import com.typesafe.config.{Config, ConfigFactory}
 import edu.neu.coe.csye7200.actors.{ExternalLookup, HedgeFundBlackboard, HedgeFundCommand, PortfolioUpdate}
 import edu.neu.coe.csye7200.model.GoogleOptionQuery
@@ -114,6 +116,18 @@ object HedgeFund {
       println(s"startup failed: ${x.getMessage}")
       HedgeFund.logger.error("startup failed: {}", x.getMessage)
   }
+  // Shut down Akka HTTP's connection pools deliberately before tearing down the actor
+  // system -- otherwise terminate() kills the pool actors abruptly (mid keep-alive) rather
+  // than closing them properly, producing "Unexpected termination of TLS actor" warnings.
+  // The extra pause after this call matters: shutdownAllConnectionPools()'s Future resolves
+  // once the pool stops handing out new work, which is not the same instant as the underlying
+  // TLS close-notify handshake actually finishing flushing over the network to each remote
+  // server -- confirmed by direct testing that omitting this pause still produced the warning.
+  Try(Await.result(Http(system.toClassic).shutdownAllConnectionPools(), FiniteDuration(10, "seconds"))) match {
+    case Success(_) =>
+    case Failure(x) => HedgeFund.logger.warn("connection pool shutdown failed: {}", x.getMessage)
+  }
+  Thread.sleep(2000)
   system.terminate()
   Await.ready(system.whenTerminated, FiniteDuration(5, "seconds"))
 }
