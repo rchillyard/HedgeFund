@@ -2,6 +2,7 @@ package edu.neu.coe.csye7200.actors
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
+import edu.neu.coe.csye7200.providers.ProviderRegistry
 
 /**
   * @author robinhillyard
@@ -9,10 +10,13 @@ import akka.actor.typed.{ActorRef, Behavior}
 object EntityParser {
 
   def apply(blackboard: ActorRef[HedgeFundCommand]): Behavior[EntityMessage] = Behaviors.setup { context =>
-    val parsers: Map[String, ActorRef[ContentMessage]] = Map(
-      "json:YQL" -> context.spawn(JsonYQLParser(blackboard), "JsonParserYQL"),
-      "json:GF" -> context.spawn(JsonGoogleParser(blackboard), "JsonGoogleParser"),
-      "json:GO" -> context.spawn(JsonGoogleOptionParser(blackboard), "JsonGoogleOptionParser"))
+    // Stock-quote providers are registered once in ProviderRegistry; option-chain parsing
+    // (out of scope for the provider plugin architecture -- no candidate provider offers a
+    // free option-chain tier) stays wired here directly, as it always has been.
+    val parsers: Map[String, ActorRef[ContentMessage]] =
+      ProviderRegistry.providers.values.map { p =>
+        p.protocol -> context.spawn(p.parserBehavior(blackboard), s"parser-${p.protocol.replace(':', '-')}")
+      }.toMap + ("json:GO" -> context.spawn(JsonGoogleOptionParser(blackboard), "JsonGoogleOptionParser"))
 
     Behaviors.receiveMessage {
       case EntityMessage(protocol, entity) =>

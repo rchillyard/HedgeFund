@@ -3,8 +3,9 @@ package edu.neu.coe.csye7200
 import akka.actor.typed.{ActorRef, ActorSystem}
 import com.typesafe.config.{Config, ConfigFactory}
 import edu.neu.coe.csye7200.actors.{ExternalLookup, HedgeFundBlackboard, HedgeFundCommand, PortfolioUpdate}
-import edu.neu.coe.csye7200.model.{GoogleOptionQuery, GoogleQuery, Query, YQLQuery}
+import edu.neu.coe.csye7200.model.GoogleOptionQuery
 import edu.neu.coe.csye7200.portfolio.{Portfolio, PortfolioParser}
+import edu.neu.coe.csye7200.providers.ProviderRegistry
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.concurrent.Await
@@ -19,26 +20,39 @@ import scala.util._
 object HedgeFund {
 
   def startup(config: Config)(implicit system: ActorSystem[HedgeFundCommand]): Try[ActorRef[HedgeFundCommand]] = {
-    val engine: Option[Query] = config.getString("engine") match {
-      case "YQL" => Some(YQLQuery(config.getString("format"), diagnostics = false))
-      case "Google" => Some(GoogleQuery("NASDAQ"))
-      case _ => None
-    }
-    engine match {
-      case Some(x) =>
-        getPortfolio(config) match {
-          case Some(portfolio) =>
-            val blackboard: ActorRef[HedgeFundCommand] = system
-            val symbols = getSymbols(config, portfolio)
-            blackboard ! ExternalLookup(x.getProtocol, x.createQuery(symbols))
-            val optionEngine = new GoogleOptionQuery
-            symbols foreach {
-              s => blackboard ! ExternalLookup(optionEngine.getProtocol, optionEngine.createQuery(List(s)))
-            }
-            blackboard ! PortfolioUpdate(portfolio)
-            Success(blackboard)
+    ProviderRegistry.providers.get(config.getString("engine")) match {
+      case Some(provider) =>
+        // provider.query is deferred (a def, not a val) specifically so a provider needing
+        // an API key only fails here, when actually selected -- not merely by being listed
+        // in ProviderRegistry. Try(...) turns a missing key into a clean Failure rather than
+        // an uncaught exception, matching this method's existing error-handling style.
+        Try(provider.query) match {
+          case Success(query) =>
+            getPortfolio(config) match {
+              case Some(portfolio) =>
+                val blackboard: ActorRef[HedgeFundCommand] = system
+                val symbols = getSymbols(config, portfolio)
+                // One request per symbol, uniformly for every provider: Alpha Vantage's free
+                // GLOBAL_QUOTE endpoint accepts exactly one symbol per call, so this can no
+                // longer rely on YQL/Google's old batch-all-symbols-into-one-URI style. Staggered
+                // by provider.requestInterval (zero for providers with no meaningful rate limit)
+                // -- confirmed necessary by a real run against Alpha Vantage's free tier, which
+                // otherwise rate-limits all but the first of several near-simultaneous requests.
+                symbols.zipWithIndex foreach {
+                  case (s, i) =>
+                    if (i > 0) Thread.sleep(provider.requestInterval.toMillis)
+                    blackboard ! ExternalLookup(provider.protocol, query.createQuery(List(s)))
+                }
+                val optionEngine = new GoogleOptionQuery
+                symbols foreach {
+                  s => blackboard ! ExternalLookup(optionEngine.getProtocol, optionEngine.createQuery(List(s)))
+                }
+                blackboard ! PortfolioUpdate(portfolio)
+                Success(blackboard)
 
-          case None => Failure(new Exception(s"configuration has errors--see logs"))
+              case None => Failure(new Exception(s"configuration has errors--see logs"))
+            }
+          case Failure(x) => Failure(x)
         }
 
       case _ => Failure(new Exception("initialization engine not defined"))
@@ -89,7 +103,17 @@ object HedgeFund {
   val config = ConfigFactory.load()
   println(s"""${config.getString("name")}, ${config.getString("appVersion")}""")
   implicit val system: ActorSystem[HedgeFundCommand] = ActorSystem(HedgeFundBlackboard(), "HedgeFund")
-  HedgeFund.startup(config)
+  HedgeFund.startup(config) match {
+    case Success(_) =>
+      // startup only fires the ExternalLookup pipeline off asynchronously (tell, not ask) --
+      // terminate() below begins shutdown immediately, so without a real pause here almost
+      // none of the actual HTTP round trips (to whichever provider is configured) get a
+      // chance to complete before the actor system tears down.
+      Thread.sleep(20000)
+    case Failure(x) =>
+      println(s"startup failed: ${x.getMessage}")
+      HedgeFund.logger.error("startup failed: {}", x.getMessage)
+  }
   system.terminate()
-  Await.ready(system.whenTerminated, FiniteDuration(1, "second"))
+  Await.ready(system.whenTerminated, FiniteDuration(5, "seconds"))
 }
