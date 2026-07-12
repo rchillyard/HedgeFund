@@ -1,32 +1,31 @@
 package edu.neu.coe.csye7200.actors
 
-import akka.actor.{ActorRef, Props}
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
 import akka.http.scaladsl.model._
 
 /**
   * @author robinhillyard
   */
-class HttpReader(blackboard: ActorRef) extends BlackboardActor(blackboard) {
+object HttpReader {
 
-  val entityParser: ActorRef = context.actorOf(Props.create(classOf[EntityParser], blackboard), "EntityParser")
+  def apply(blackboard: ActorRef[HedgeFundCommand]): Behavior[HttpReaderCommand] = Behaviors.setup { context =>
+    val entityParser: ActorRef[EntityMessage] = context.spawn(EntityParser(blackboard), "EntityParser")
 
-  /**
-    * @return
-    */
-  override def receive: PartialFunction[Any, Unit] = {
-    case HttpResult(queryProtocol, request, HttpResponse(status, headers, entity: HttpEntity.Strict, protocol)) =>
-      log.info("request sent: {}; protocol: {}; response status: {}", request, protocol, status)
-      if (status.isSuccess)
-        processResponse(entity, headers, queryProtocol)
-      else
-        log.error("HTTP transaction error: {}", status.reason())
+    def processResponse(entity: HttpEntity.Strict, headers: Seq[HttpHeader], protocol: String): Unit = {
+      context.log.debug("response headers: {}; entity: {}", headers, entity)
+      entityParser ! EntityMessage(protocol, entity)
+    }
 
-    case m => super.receive(m)
-  }
-
-  def processResponse(entity: HttpEntity.Strict, headers: Seq[HttpHeader], protocol: String): Unit = {
-    log.debug("response headers: {}; entity: {}", headers, entity)
-    entityParser ! EntityMessage(protocol, entity)
+    Behaviors.receiveMessage {
+      case HttpResult(queryProtocol, request, HttpResponse(status, headers, entity: HttpEntity.Strict, protocol)) =>
+        context.log.info("request sent: {}; protocol: {}; response status: {}", request, protocol, status)
+        if (status.isSuccess)
+          processResponse(entity, headers, queryProtocol)
+        else
+          context.log.error("HTTP transaction error: {}", status.reason())
+        Behaviors.same
+    }
   }
 }
 

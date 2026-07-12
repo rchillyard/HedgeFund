@@ -1,8 +1,10 @@
 package edu.neu.coe.csye7200.actors
 
-import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.actor.testkit.typed.scaladsl.ActorTestKit
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
 import akka.http.scaladsl.model._
-import akka.testkit._
+import akka.util.Timeout
 import edu.neu.coe.csye7200.actors.JsonGoogleParser.Results
 import edu.neu.coe.csye7200.model.Model
 import org.scalatest._
@@ -11,23 +13,19 @@ import org.scalatest.wordspec.AnyWordSpecLike
 
 import scala.concurrent.duration._
 import scala.io.Source
+import scala.util.{Failure, Success}
 
 /**
   * This specification really tests much of the HedgeFund app but because it particularly deals with
   * processing data from the YQL (Yahoo Query Language) using JSON, we call it by its given name.
   */
-class JsonGoogleParserSpec(_system: ActorSystem) extends TestKit(_system) with ImplicitSender
-  with AnyWordSpecLike with Matchers with Inside with BeforeAndAfterAll {
+class JsonGoogleParserSpec extends AnyWordSpecLike with Matchers with Inside with BeforeAndAfterAll {
 
-  def this() = this(ActorSystem("JsonGoogleParserSpec"))
+  val testKit: ActorTestKit = ActorTestKit()
 
-  override def afterAll(): Unit = {
-    TestKit.shutdownActorSystem(system)
-  }
+  override def afterAll(): Unit = testKit.shutdownTestKit()
 
-  import scala.language.postfixOps
-
-  val json: String = Source.fromFile(getClass.getResource("/googleExample.json").getPath) mkString
+  val json: String = Source.fromFile(getClass.getResource("/googleExample.json").getPath).mkString
 
   "json read" in {
     import JsonGoogleParser.MyJsonProtocol._
@@ -38,7 +36,7 @@ class JsonGoogleParserSpec(_system: ActorSystem) extends TestKit(_system) with I
 
   "json conversion" in {
     val contentTypeText = ContentType(MediaTypes.`text/html`, HttpCharsets.`ISO-8859-1`)
-    val entity = HttpEntity(contentTypeText, json.getBytes())
+    val entity: HttpEntity.Strict = HttpEntity(contentTypeText, json.getBytes())
     val ok = JsonGoogleParser.decode(entity) match {
       case Right(x) =>
         x.length should equal(2)
@@ -52,12 +50,13 @@ class JsonGoogleParserSpec(_system: ActorSystem) extends TestKit(_system) with I
   }
 
   "send back" in {
-    val blackboard = system.actorOf(Props.create(classOf[MockGoogleBlackboard], testActor), "blackboard")
+    val probe = testKit.createTestProbe[QueryResponse]()
+    val blackboard = testKit.spawn(MockGoogleBlackboard(probe.ref))
     val contentType = ContentType(MediaTypes.`text/html`, HttpCharsets.`ISO-8859-1`)
-    val entityParser = _system.actorOf(Props.create(classOf[EntityParser], blackboard), "entityParser")
-    val entity = HttpEntity(contentType, json.getBytes())
+    val entityParser = testKit.spawn(EntityParser(blackboard))
+    val entity: HttpEntity.Strict = HttpEntity(contentType, json.getBytes())
     entityParser ! EntityMessage("json:GF", entity)
-    val msg = expectMsgClass(3.seconds, classOf[QueryResponse])
+    val msg = probe.expectMessageType[QueryResponse](3.seconds)
     println("msg received: " + msg)
     msg should matchPattern {
       case QueryResponse("AAPL", _) =>
@@ -68,39 +67,53 @@ class JsonGoogleParserSpec(_system: ActorSystem) extends TestKit(_system) with I
   }
 }
 
-import akka.pattern.ask
+object MockGoogleUpdateLogger {
+  def apply(marketData: ActorRef[MarketDataCommand], probe: ActorRef[QueryResponse]): Behavior[UpdateLoggerCommand] =
+    Behaviors.setup { context =>
+      implicit val timeout: Timeout = Timeout(5.seconds)
 
-import scala.concurrent.Await
+      Behaviors.receiveMessage {
+        case Confirmation(identifier, model, _) =>
+          model.getKey("price") match {
+            case Some(p) =>
+              context.ask(marketData, (replyTo: ActorRef[QueryResponse]) => SymbolQuery(identifier, List(p), replyTo)) {
+                case Success(result) => SymbolQueryResult(identifier, Success(result))
+                case Failure(ex) => SymbolQueryResult(identifier, Failure(ex))
+              }
+            case None => context.log.warn(s"'price' not defined in model")
+          }
+          Behaviors.same
 
-class MockGoogleUpdateLogger(blackboard: ActorRef) extends UpdateLogger(blackboard) {
-  override def processStock(identifier: String, model: Model): Unit = {
-    model.getKey("price") match {
-      case Some(p) =>
-        // sender is the MarketData actor
-        val future = sender() ? SymbolQuery(identifier, List(p))
-        val result = Await.result(future, timeout.duration).asInstanceOf[QueryResponse]
-        result.attributes foreach {
-          case (k, v) =>
-            log.info(s"$identifier attribute $k has been updated to: $v")
-            blackboard ! result
-        }
-      case None => log.warning(s"'price' not defined in model")
+        case SymbolQueryResult(identifier, Success(result)) =>
+          result.attributes foreach {
+            case (k, v) => context.log.info(s"$identifier attribute $k has been updated to: $v")
+          }
+          probe ! result
+          Behaviors.same
+
+        case SymbolQueryResult(_, Failure(ex)) =>
+          context.log.warn(ex.getLocalizedMessage)
+          Behaviors.same
+
+        case _: PortfolioUpdate | _: OptionQueryResult => Behaviors.same
+      }
+    }
+}
+
+object MockGoogleBlackboard {
+  def apply(probe: ActorRef[QueryResponse]): Behavior[HedgeFundCommand] = Behaviors.setup { context =>
+    val marketData: ActorRef[MarketDataCommand] = context.spawn(MarketData(context.self), "marketData")
+    val updateLogger: ActorRef[UpdateLoggerCommand] = context.spawn(MockGoogleUpdateLogger(marketData, probe), "updateLogger")
+
+    Behaviors.receiveMessage {
+      case m: MarketDataCommand =>
+        marketData ! m
+        Behaviors.same
+      case c@Confirmation("AAPL", _, _) =>
+        updateLogger ! c
+        Behaviors.same
+      case _: Confirmation => Behaviors.same
+      case _ => Behaviors.same
     }
   }
 }
-
-class MockGoogleBlackboard(testActor: ActorRef) extends Blackboard(Map(classOf[KnowledgeUpdate] -> "marketData", classOf[SymbolQuery] -> "marketData", classOf[OptionQuery] -> "marketData", classOf[CandidateOption] -> "optionAnalyzer", classOf[Confirmation] -> "updateLogger"),
-  Map("marketData" -> classOf[MarketData], "optionAnalyzer" -> classOf[OptionAnalyzer], "updateLogger" -> classOf[MockGoogleUpdateLogger])) {
-
-  override def receive: PartialFunction[Any, Unit] = {
-    case msg: Confirmation => msg match {
-      // Cut down on the volume of messages
-      case Confirmation("AAPL", _, _) => super.receive(msg)
-      case _ =>
-    }
-    case msg: QueryResponse => testActor forward msg
-
-    case msg => super.receive(msg)
-  }
-}
-

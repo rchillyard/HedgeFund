@@ -1,8 +1,8 @@
 package edu.neu.coe.csye7200
 
-import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.actor.typed.{ActorRef, ActorSystem}
 import com.typesafe.config.{Config, ConfigFactory}
-import edu.neu.coe.csye7200.actors.{ExternalLookup, HedgeFundBlackboard, PortfolioUpdate}
+import edu.neu.coe.csye7200.actors.{ExternalLookup, HedgeFundBlackboard, HedgeFundCommand, PortfolioUpdate}
 import edu.neu.coe.csye7200.model.{GoogleOptionQuery, GoogleQuery, Query, YQLQuery}
 import edu.neu.coe.csye7200.portfolio.{Portfolio, PortfolioParser}
 import org.slf4j.{Logger, LoggerFactory}
@@ -18,7 +18,7 @@ import scala.util._
   */
 object HedgeFund {
 
-  def startup(config: Config)(implicit system: ActorSystem): Try[ActorRef] = {
+  def startup(config: Config)(implicit system: ActorSystem[HedgeFundCommand]): Try[ActorRef[HedgeFundCommand]] = {
     val engine: Option[Query] = config.getString("engine") match {
       case "YQL" => Some(YQLQuery(config.getString("format"), diagnostics = false))
       case "Google" => Some(GoogleQuery("NASDAQ"))
@@ -28,7 +28,7 @@ object HedgeFund {
       case Some(x) =>
         getPortfolio(config) match {
           case Some(portfolio) =>
-            val blackboard = system.actorOf(Props.create(classOf[HedgeFundBlackboard]), "blackboard")
+            val blackboard: ActorRef[HedgeFundCommand] = system
             val symbols = getSymbols(config, portfolio)
             blackboard ! ExternalLookup(x.getProtocol, x.createQuery(symbols))
             val optionEngine = new GoogleOptionQuery
@@ -88,8 +88,8 @@ object HedgeFund {
 @main def hedgeFundApp(): Unit = {
   val config = ConfigFactory.load()
   println(s"""${config.getString("name")}, ${config.getString("appVersion")}""")
-  implicit val system: ActorSystem = ActorSystem("HedgeFund")
+  implicit val system: ActorSystem[HedgeFundCommand] = ActorSystem(HedgeFundBlackboard(), "HedgeFund")
   HedgeFund.startup(config)
-  Await.ready(system.terminate(), FiniteDuration(1, "second"))
+  system.terminate()
+  Await.ready(system.whenTerminated, FiniteDuration(1, "second"))
 }
-

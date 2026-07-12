@@ -1,8 +1,10 @@
 package edu.neu.coe.csye7200.actors
 
-import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.actor.testkit.typed.scaladsl.ActorTestKit
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
 import akka.http.scaladsl.model._
-import akka.testkit._
+import akka.util.Timeout
 import edu.neu.coe.csye7200.model.Model
 import org.scalatest._
 import org.scalatest.matchers.should.Matchers
@@ -11,23 +13,19 @@ import org.scalatest.wordspec.AnyWordSpecLike
 
 import scala.concurrent.duration._
 import scala.io.Source
+import scala.util.{Failure, Success}
 
 /**
   * This specification tests much of the HedgeFund app but because it particularly deals with
   * processing data from the YQL (Yahoo Query Language) using JSON, we call it by its given name.
   */
-class JsonGoogleOptionParserSpec(_system: ActorSystem) extends TestKit(_system) with ImplicitSender
-  with AnyWordSpecLike with Matchers with BeforeAndAfterAll {
+class JsonGoogleOptionParserSpec extends AnyWordSpecLike with Matchers with BeforeAndAfterAll {
 
-  def this() = this(ActorSystem("JsonGoogleParserSpec"))
+  val testKit: ActorTestKit = ActorTestKit()
 
-  override def afterAll(): Unit = {
-    TestKit.shutdownActorSystem(system)
-  }
+  override def afterAll(): Unit = testKit.shutdownTestKit()
 
-  import scala.language.postfixOps
-
-  val json: String = Source.fromFile(getClass.getResource("/googleOptionExample.json").getPath) mkString
+  val json: String = Source.fromFile(getClass.getResource("/googleOptionExample.json").getPath).mkString
 
   "json read" in {
     import spray.json._
@@ -40,7 +38,7 @@ class JsonGoogleOptionParserSpec(_system: ActorSystem) extends TestKit(_system) 
 
   "json conversion" in {
     val contentType = ContentTypes.`application/json`
-    val entity = HttpEntity(contentType, json.getBytes())
+    val entity: HttpEntity.Strict = HttpEntity(contentType, json.getBytes())
     val ok = JsonGoogleOptionParser.decode(entity) match {
       case Right(x) =>
         x.puts.length should equal(20)
@@ -54,12 +52,13 @@ class JsonGoogleOptionParserSpec(_system: ActorSystem) extends TestKit(_system) 
   }
 
   "send back" taggedAs Slow in {
-    val blackboard = system.actorOf(Props.create(classOf[MockGoogleOptionBlackboard], testActor), "blackboard")
-    val entityParser = _system.actorOf(Props.create(classOf[EntityParser], blackboard))
+    val probe = testKit.createTestProbe[QueryResponse]()
+    val blackboard = testKit.spawn(MockGoogleOptionBlackboard(probe.ref))
+    val entityParser = testKit.spawn(EntityParser(blackboard))
     val contentType = ContentTypes.`application/json`
-    val entity = HttpEntity(contentType, json.getBytes())
+    val entity: HttpEntity.Strict = HttpEntity(contentType, json.getBytes())
     entityParser ! EntityMessage("json:GO", entity)
-    val msg = expectMsgClass(5.seconds, classOf[QueryResponse])
+    val msg = probe.expectMessageType[QueryResponse](5.seconds)
     println("msg received: " + msg)
     msg should matchPattern {
       case QueryResponse(_, _) =>
@@ -67,31 +66,53 @@ class JsonGoogleOptionParserSpec(_system: ActorSystem) extends TestKit(_system) 
   }
 }
 
-import akka.pattern.ask
+object MockGoogleOptionUpdateLogger {
+  def apply(marketData: ActorRef[MarketDataCommand], probe: ActorRef[QueryResponse]): Behavior[UpdateLoggerCommand] =
+    Behaviors.setup { context =>
+      implicit val timeout: Timeout = Timeout(5.seconds)
 
-import scala.concurrent.Await
+      Behaviors.receiveMessage {
+        case Confirmation(identifier, model, _) =>
+          val keys = model mapKeys List("underlying", "strikePrice", "expiry")
+          println(s"$keys")
+          context.ask(marketData, (replyTo: ActorRef[QueryResponse]) => OptionQuery(identifier, keys, replyTo)) {
+            case Success(result) => OptionQueryResult(identifier, Success(result))
+            case Failure(ex) => OptionQueryResult(identifier, Failure(ex))
+          }
+          Behaviors.same
 
+        case OptionQueryResult(_, Success(result)) =>
+          probe ! result
+          Behaviors.same
 
-class MockGoogleOptionUpdateLogger(blackboard: ActorRef) extends UpdateLogger(blackboard) {
-  override def processOption(identifier: String, model: Model, attributes: Map[String, Any]): Unit = {
-    val keys = model mapKeys List("underlying", "strikePrice", "expiry")
-    println(s"$keys")
-    val future = blackboard ? OptionQuery(identifier, keys)
-    val result = Await.result(future, timeout.duration).asInstanceOf[QueryResponse]
-    blackboard ! result
-  }
+        case OptionQueryResult(_, Failure(ex)) =>
+          context.log.warn(ex.getLocalizedMessage)
+          Behaviors.same
+
+        case _: PortfolioUpdate | _: SymbolQueryResult => Behaviors.same
+      }
+    }
 }
 
-class MockGoogleOptionBlackboard(testActor: ActorRef) extends Blackboard(Map(classOf[KnowledgeUpdate] -> "marketData", classOf[SymbolQuery] -> "marketData", classOf[OptionQuery] -> "marketData", classOf[CandidateOption] -> "optionAnalyzer", classOf[Confirmation] -> "updateLogger"),
-  Map("marketData" -> classOf[MarketData], "optionAnalyzer" -> classOf[OptionAnalyzer], "updateLogger" -> classOf[MockGoogleOptionUpdateLogger])) {
+object MockGoogleOptionBlackboard {
+  def apply(probe: ActorRef[QueryResponse]): Behavior[HedgeFundCommand] = Behaviors.setup { context =>
+    val marketData: ActorRef[MarketDataCommand] = context.spawn(MarketData(context.self), "marketData")
+    val optionAnalyzer: ActorRef[OptionAnalyzerCommand] = context.spawn(OptionAnalyzer(context.self), "optionAnalyzer")
+    val updateLogger: ActorRef[UpdateLoggerCommand] = context.spawn(MockGoogleOptionUpdateLogger(marketData, probe), "updateLogger")
 
-  override def receive: PartialFunction[Any, Unit] = {
-    case msg: Confirmation => msg match {
+    Behaviors.receiveMessage {
+      case m: MarketDataCommand =>
+        marketData ! m
+        Behaviors.same
+      case m: OptionAnalyzerCommand =>
+        optionAnalyzer ! m
+        Behaviors.same
       // Cut down on the volume of messages
-      case Confirmation("MSFT150731P00045000", _, _) => super.receive(msg)
-      case _ =>
+      case c@Confirmation("MSFT150731P00045000", _, _) =>
+        updateLogger ! c
+        Behaviors.same
+      case _: Confirmation => Behaviors.same
+      case _ => Behaviors.same
     }
-    case msg: QueryResponse => testActor forward msg
-    case msg => super.receive(msg)
   }
 }

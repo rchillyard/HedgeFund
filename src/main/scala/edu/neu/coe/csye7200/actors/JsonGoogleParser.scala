@@ -1,6 +1,7 @@
 package edu.neu.coe.csye7200.actors
 
-import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
 import akka.http.scaladsl.model._
 import akka.util.ByteString
 import edu.neu.coe.csye7200.model.{GoogleModel, Model}
@@ -12,35 +13,35 @@ import scala.util._
   *
   * @author robinhillyard
   */
-class JsonGoogleParser(blackboard: ActorRef) extends BlackboardActor(blackboard) {
-
-  val model: Model = new GoogleModel
-
-  override def receive: PartialFunction[Any, Unit] = {
-    case ContentMessage(entity) =>
-      log.debug("JsonGoogleParser received ContentMessage")
-      JsonGoogleParser.decode(entity) match {
-        case Right(results) => processQuote(results)
-        case Left(message) => log.warning("Decoding error: " + message)
-      }
-    case m => super.receive(m)
-  }
-
-  def processQuote(quotes: Seq[Map[String, Option[String]]]): Unit = quotes foreach { q => processInstrument(q) }
-
-  def processInstrument(quote: Map[String, Option[String]]): Unit = model.getKey("symbol") match {
-    case Some(s) =>
-      quote.get(s) match {
-        case Some(Some(symbol)) => updateMarket(symbol, quote)
-        case _ => log.warning(s"$s is undefined in quote")
-      }
-    case None => log.warning("'symbol' is not defined in model")
-  }
-
-  def updateMarket(symbol: String, quote: Map[String, Option[String]]): Unit = blackboard ! KnowledgeUpdate(model, symbol, quote flatMap { case (k, Some(v)) => Option(k -> v); case _ => None })
-}
-
 object JsonGoogleParser {
+
+  def apply(blackboard: ActorRef[HedgeFundCommand]): Behavior[ContentMessage] = Behaviors.setup { context =>
+    val model: Model = new GoogleModel
+
+    def processQuote(quotes: Seq[Map[String, Option[String]]]): Unit = quotes foreach { q => processInstrument(q) }
+
+    def processInstrument(quote: Map[String, Option[String]]): Unit = model.getKey("symbol") match {
+      case Some(s) =>
+        quote.get(s) match {
+          case Some(Some(symbol)) => updateMarket(symbol, quote)
+          case _ => context.log.warn(s"$s is undefined in quote")
+        }
+      case None => context.log.warn("'symbol' is not defined in model")
+    }
+
+    def updateMarket(symbol: String, quote: Map[String, Option[String]]): Unit =
+      blackboard ! KnowledgeUpdate(model, symbol, quote flatMap { case (k, Some(v)) => Option(k -> v); case _ => None })
+
+    Behaviors.receiveMessage {
+      case ContentMessage(entity) =>
+        context.log.debug("JsonGoogleParser received ContentMessage")
+        decode(entity) match {
+          case Right(results) => processQuote(results)
+          case Left(message) => context.log.warn("Decoding error: " + message)
+        }
+        Behaviors.same
+    }
+  }
 
   import edu.neu.coe.csye7200.http.JsonUnmarshalling
   import edu.neu.coe.csye7200.http.JsonUnmarshalling.Deserialized

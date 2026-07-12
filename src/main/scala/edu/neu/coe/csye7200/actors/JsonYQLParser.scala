@@ -1,7 +1,7 @@
 package edu.neu.coe.csye7200.actors
 
-import akka.actor.ActorRef
-import akka.http.scaladsl.model.HttpEntity
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
 import edu.neu.coe.csye7200.model.{Model, YQLModel}
 
 import scala.util._
@@ -11,39 +11,40 @@ import scala.util._
   *
   * @author robinhillyard
   */
-class JsonYQLParser(blackboard: ActorRef) extends BlackboardActor(blackboard) {
-
-  val model: Model = new YQLModel
-
-  override def receive: PartialFunction[Any, Unit] = {
-    case ContentMessage(entity) =>
-      log.debug("JsonYQLParser received ContentMessage")
-      JsonYQLParser.decode(entity) match {
-        case Right(response) => processQuote(response.query.results.quote)
-        case Left(message) => log.warning(message.toString)
-      }
-    case m => super.receive(m)
-  }
-
-  def processQuote(quotes: Seq[Map[String, Option[String]]]): Unit = quotes foreach { q => processInstrument(q) }
-
-  def processInstrument(quote: Map[String, Option[String]]): Unit = model.getKey("symbol") match {
-    case Some(s) =>
-      quote.get(s) match {
-        case Some(Some(symbol)) => updateMarket(symbol, quote)
-        case _ => log.warning(s"symbol $s is undefined")
-      }
-    case _ => log.warning("'symbol' is undefined in model")
-  }
-
-  def updateMarket(symbol: String, quote: Map[String, Option[String]]): Unit = blackboard ! KnowledgeUpdate(model, symbol, quote flatMap { case (k, Some(v)) => Option(k -> v); case _ => None })
-}
-
 object JsonYQLParser {
 
   import edu.neu.coe.csye7200.http.JsonUnmarshalling
   import edu.neu.coe.csye7200.http.JsonUnmarshalling.Deserialized
+  import akka.http.scaladsl.model.HttpEntity
   import spray.json.{DefaultJsonProtocol, _}
+
+  def apply(blackboard: ActorRef[HedgeFundCommand]): Behavior[ContentMessage] = Behaviors.setup { context =>
+    val model: Model = new YQLModel
+
+    def processQuote(quotes: Seq[Map[String, Option[String]]]): Unit = quotes foreach { q => processInstrument(q) }
+
+    def processInstrument(quote: Map[String, Option[String]]): Unit = model.getKey("symbol") match {
+      case Some(s) =>
+        quote.get(s) match {
+          case Some(Some(symbol)) => updateMarket(symbol, quote)
+          case _ => context.log.warn(s"symbol $s is undefined")
+        }
+      case _ => context.log.warn("'symbol' is undefined in model")
+    }
+
+    def updateMarket(symbol: String, quote: Map[String, Option[String]]): Unit =
+      blackboard ! KnowledgeUpdate(model, symbol, quote flatMap { case (k, Some(v)) => Option(k -> v); case _ => None })
+
+    Behaviors.receiveMessage {
+      case ContentMessage(entity) =>
+        context.log.debug("JsonYQLParser received ContentMessage")
+        decode(entity) match {
+          case Right(response) => processQuote(response.query.results.quote)
+          case Left(message) => context.log.warn(message.toString)
+        }
+        Behaviors.same
+    }
+  }
 
   case class Response(query: Query)
 

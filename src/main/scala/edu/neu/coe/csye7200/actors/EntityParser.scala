@@ -1,24 +1,28 @@
 package edu.neu.coe.csye7200.actors
 
-import akka.actor.{ActorRef, Props}
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
 
 /**
   * @author robinhillyard
   */
-class EntityParser(blackboard: ActorRef) extends BlackboardActor(blackboard) {
+object EntityParser {
 
-  val parsers = Map("json:YQL" -> context.actorOf(Props.create(classOf[JsonYQLParser], blackboard), "JsonParserYQL"),
-    "json:GF" -> context.actorOf(Props.create(classOf[JsonGoogleParser], blackboard), "JsonGoogleParser"),
-    "json:GO" -> context.actorOf(Props.create(classOf[JsonGoogleOptionParser], blackboard), "JsonGoogleOptionParser"))
+  def apply(blackboard: ActorRef[HedgeFundCommand]): Behavior[EntityMessage] = Behaviors.setup { context =>
+    val parsers: Map[String, ActorRef[ContentMessage]] = Map(
+      "json:YQL" -> context.spawn(JsonYQLParser(blackboard), "JsonParserYQL"),
+      "json:GF" -> context.spawn(JsonGoogleParser(blackboard), "JsonGoogleParser"),
+      "json:GO" -> context.spawn(JsonGoogleOptionParser(blackboard), "JsonGoogleOptionParser"))
 
-  override def receive: PartialFunction[Any, Unit] = {
-    case EntityMessage(protocol, entity) =>
-      log.debug("EntityMessage received: protocol: {}", protocol)
-      parsers.get(protocol) match {
-        case Some(actorRef) => actorRef ! ContentMessage(entity)
-        case None => log.warning("no parser for: {}", protocol)
-      }
-    case m => super.receive(m)
+    Behaviors.receiveMessage {
+      case EntityMessage(protocol, entity) =>
+        context.log.debug("EntityMessage received: protocol: {}", protocol)
+        parsers.get(protocol) match {
+          case Some(actorRef) => actorRef ! ContentMessage(entity)
+          case None => context.log.warn("no parser for: {}", protocol)
+        }
+        Behaviors.same
+    }
   }
 }
 

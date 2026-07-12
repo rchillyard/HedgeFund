@@ -11,8 +11,8 @@ val sprayJsonVersion = "1.3.6"
 val scalaTestVersion = "3.2.20"
 
 libraryDependencies ++= Seq(
-  akkaGroup %% "akka-actor" % akkaVersion,
-  akkaGroup %% "akka-testkit" % akkaVersion % "test",
+  akkaGroup %% "akka-actor-typed" % akkaVersion,
+  akkaGroup %% "akka-actor-testkit-typed" % akkaVersion % "test",
   akkaGroup %% "akka-slf4j" % akkaVersion,
   akkaGroup %% "akka-http" % akkaHttpVersion,
   akkaGroup %% "akka-stream" % akkaVersion,

@@ -1,10 +1,11 @@
 package edu.neu.coe.csye7200.actors
 
-import akka.actor.ActorRef
-import akka.event.LoggingAdapter
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
 import edu.neu.coe.csye7200.HedgeFund
 import edu.neu.coe.csye7200.model.{MapUtils, Model}
 import edu.neu.coe.csye7200.oldrules.{Candidate, Predicate, SimpleRule}
+import org.slf4j.Logger
 
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
@@ -12,74 +13,67 @@ import scala.util.{Failure, Success, Try}
 /**
   * @author robinhillyard
   */
-class OptionAnalyzer(blackboard: ActorRef) extends BlackboardActor(blackboard) {
+object OptionAnalyzer {
 
-  // This is mutable state information.
-  // When this actor is terminated and reborn, the rules/properties will be re-read from their respective files
-  var rules: Map[String, Predicate] = Map[String, Predicate]()
-  var properties: List[Map[String, Any]] = List[Map[String, Any]]()
+  def apply(blackboard: ActorRef[HedgeFundCommand]): Behavior[OptionAnalyzerCommand] = Behaviors.setup { context =>
+    // This is state read once at actor startup. When this actor is restarted, the rules/properties
+    // will be re-read from their respective files (mirroring the original preStart-on-restart behavior).
+    val rules: Map[String, Predicate] = OptionAnalyzer.getRules(context.log)
+    val properties: List[Map[String, Any]] = OptionAnalyzer.getProperties
 
-  override def receive: PartialFunction[Any, Unit] = {
-    case CandidateOption(model, identifier, put, optionDetails, chainDetails) =>
-      log.info("Option Analysis of identifier: {}", identifier)
-      val candidate = OptionCandidate(put, model, identifier, optionDetails, chainDetails)
-      if (applyRules(put, candidate)) {
-        log.debug("Qualifies: sending confirmation message to blackboard")
-        val attributes = MapUtils.flatten[String, Any](List("underlying") map { k => k -> candidate(k) } toMap)
-        log.debug(s"attributes: $attributes")
-        blackboard ! Confirmation(identifier, model, attributes)
-      } else
-        log.debug(s"$identifier does not qualify")
+    def getProperty(key: String, value: Any, property: String): Option[Any] =
+      getProperties(key, value) match {
+        case Some(m) => m.get(property);
+        case None => None
+      }
 
-    case m => super.receive(m)
-  }
+    def getProperties(key: String, value: Any): Option[Map[String, Any]] =
+      properties find { p =>
+        p.get(key) match {
+          case Some(`value`) => true;
+          case _ => false
+        }
+      }
 
-  override def preStart(): Unit = {
-    rules = OptionAnalyzer.getRules(log)
-    properties = OptionAnalyzer.getProperties
-  }
-
-  def getProperty(key: String, value: Any, property: String): Option[Any] =
-    getProperties(key, value) match {
-      case Some(m) => m.get(property);
-      case None => None
-    }
-
-  def getProperties(key: String, value: Any): Option[Map[String, Any]] =
-    properties find { p =>
-      p.get(key) match {
-        case Some(`value`) => true;
-        case _ => false
+    def applyRules(put: Boolean, candidate: Candidate): Boolean = {
+      candidate("underlying") match {
+        case Some(u) =>
+          val candidateWithProperties = candidate ++ (getProperties("Id", u) match {
+            case Some(p) => p;
+            case _ => Map()
+          })
+          val key = if (put) "put" else "call"
+          rules.get(key) match {
+            case Some(r) => r(candidateWithProperties) match {
+              case Success(b) => b
+              case Failure(e) => context.log.error("rules problem: {}", e); false
+            }
+            case None => context.log.error(s"rules problem: $key doesn't define a rule"); false
+          }
+        case _ => println(s"underlying is not defined for option: $candidate"); false
       }
     }
 
-  def applyRules(put: Boolean, candidate: Candidate): Boolean = {
-    candidate("underlying") match {
-      case Some(u) =>
-        val candidateWithProperties = candidate ++ (getProperties("Id", u) match {
-          case Some(p) => p;
-          case _ => Map()
-        })
-        val key = if (put) "put" else "call"
-        rules.get(key) match {
-          case Some(r) => r(candidateWithProperties) match {
-            case Success(b) => b
-            case Failure(e) => log.error("rules problem: {}", e); false
-          }
-          case None => log.error(s"rules problem: $key doesn't define a rule"); false
-        }
-      case _ => println(s"underlying is not defined for option: $candidate"); false
+    Behaviors.receiveMessage {
+      case CandidateOption(model, identifier, put, optionDetails, chainDetails) =>
+        context.log.info("Option Analysis of identifier: {}", identifier)
+        val candidate = OptionCandidate(put, model, identifier, optionDetails, chainDetails)
+        if (applyRules(put, candidate)) {
+          context.log.debug("Qualifies: sending confirmation message to blackboard")
+          val attributes = MapUtils.flatten[String, Any](List("underlying") map { k => k -> candidate(k) } toMap)
+          context.log.debug(s"attributes: $attributes")
+          blackboard ! Confirmation(identifier, model, attributes)
+        } else
+          context.log.debug(s"$identifier does not qualify")
+        Behaviors.same
     }
   }
-}
-
-object OptionAnalyzer {
 
   import java.io.File
 
   import com.typesafe.config._
 
-  def getRules(log: LoggingAdapter): Map[String, Predicate] = {
+  def getRules(log: Logger): Map[String, Predicate] = {
     val userHome = System.getProperty("user.home")
     val sRules = "rules.txt"
     val sUserRules = s"$userHome/$sRules"
@@ -99,7 +93,7 @@ object OptionAnalyzer {
           k -> SimpleRule(r)
         }
         } toMap
-      case None => log.warning(s"unable to read rules configuration: $sUserRules or $sSysRules"); Map()
+      case None => log.warn(s"unable to read rules configuration: $sUserRules or $sSysRules"); Map()
     }
   }
 
@@ -117,7 +111,7 @@ object OptionAnalyzer {
     *                 relative to the given class.
     * @return an optional Config
     */
-  def getConfig(filename: String, log: LoggingAdapter)(implicit clazz: Class[_] = null): Option[Config] = {
+  def getConfig(filename: String, log: Logger)(implicit clazz: Class[_] = null): Option[Config] = {
     def getConfig(clazz: Class[_]): Config = {
       println(s"getConfig: $clazz, $filename")
       val z = ConfigFactory.parseURL(clazz.getResource(filename))
@@ -126,7 +120,7 @@ object OptionAnalyzer {
     }
 
     val getConfigOptional: Option[Class[_]] => Option[Config] = _ map getConfig
-    Try(ConfigFactory.parseFile(new File(filename))).recoverWith { case e: Throwable => println(s"bad"); log.warning(e.getLocalizedMessage); Failure(e) }.toOption orElse
+    Try(ConfigFactory.parseFile(new File(filename))).recoverWith { case e: Throwable => println(s"bad"); log.warn(e.getLocalizedMessage); Failure(e) }.toOption orElse
       getConfigOptional(Option(clazz))
   }
 
