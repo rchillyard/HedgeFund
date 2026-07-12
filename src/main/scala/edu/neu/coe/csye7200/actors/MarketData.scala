@@ -39,7 +39,7 @@ class MarketData(blackboard: ActorRef) extends BlackboardActor(blackboard) {
       val x = attributes flatten
       val y = x toMap;
       log.debug(s"creating QueryResponse: $identifier $y")
-      sender ! QueryResponse(identifier, y)
+      sender() ! QueryResponse(identifier, y)
 
     case OptionQuery(key, value) =>
       log.debug("option query received re: key: {} and value {}", key, value)
@@ -49,8 +49,8 @@ class MarketData(blackboard: ActorRef) extends BlackboardActor(blackboard) {
       }
       }
       optInstr match {
-        case Some((x, m)) => sender ! QueryResponse(x, m)
-        case _ => log.warning("no match found for key: {}, value: {}", key, value); sender ! QueryResponse(null, null)
+        case Some((x, m)) => sender() ! QueryResponse(x, m)
+        case _ => log.warning("no match found for key: {}, value: {}", key, value); sender() ! QueryResponse(null, null)
       }
 
     case m => super.receive(m)

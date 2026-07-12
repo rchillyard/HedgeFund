@@ -41,7 +41,7 @@ class UpdateLogger(blackboard: ActorRef) extends BlackboardActor(blackboard) {
     model.getKey("price") match {
       case Some(p) =>
         // sender is the MarketData actor
-        val future = sender ? SymbolQuery(identifier, List(p))
+        val future = sender() ? SymbolQuery(identifier, List(p))
         val result = Await.result(future, timeout.duration).asInstanceOf[QueryResponse]
         result.attributes foreach {
           case (k, v) => log.info(s"$identifier attribute $k has been updated to: $v")
@@ -61,17 +61,17 @@ class UpdateLogger(blackboard: ActorRef) extends BlackboardActor(blackboard) {
     }
   }
 
-  def showPortfolio() {
+  def showPortfolio(): Unit = {
     println(s"Portfolio for ${portfolio.name}")
     portfolio.positions foreach showPosition
   }
 
-  def showPosition(position: Position) {
+  def showPosition(position: Position): Unit = {
     println(s"position for ${position.symbol}: quantity=${position.quantity}; options=")
     position.contracts foreach showContract
   }
 
-  def showContract(contract: Contract) {
+  def showContract(contract: Contract): Unit = {
     println(s"contract: $contract")
   }
 }

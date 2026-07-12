@@ -1,26 +1,27 @@
 package edu.neu.coe.csye7200.actors
 
 import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.http.scaladsl.model._
 import akka.testkit._
 import edu.neu.coe.csye7200.model.Model
 import org.scalatest._
+import org.scalatest.matchers.should.Matchers
 import org.scalatest.tagobjects.Slow
-import spray.http._
+import org.scalatest.wordspec.AnyWordSpecLike
 
 import scala.concurrent.duration._
 import scala.io.Source
-import scala.language.postfixOps
 
 /**
   * This specification tests much of the HedgeFund app but because it particularly deals with
   * processing data from the YQL (Yahoo Query Language) using JSON, we call it by its given name.
   */
 class JsonGoogleOptionParserSpec(_system: ActorSystem) extends TestKit(_system) with ImplicitSender
-  with WordSpecLike with Matchers with BeforeAndAfterAll {
+  with AnyWordSpecLike with Matchers with BeforeAndAfterAll {
 
   def this() = this(ActorSystem("JsonGoogleParserSpec"))
 
-  override def afterAll {
+  override def afterAll(): Unit = {
     TestKit.shutdownActorSystem(system)
   }
 
@@ -38,7 +39,7 @@ class JsonGoogleOptionParserSpec(_system: ActorSystem) extends TestKit(_system) 
   }
 
   "json conversion" in {
-    val contentType = ContentType(MediaTypes.`application/json`, HttpCharsets.`UTF-8`)
+    val contentType = ContentTypes.`application/json`
     val entity = HttpEntity(contentType, json.getBytes())
     val ok = JsonGoogleOptionParser.decode(entity) match {
       case Right(x) =>
@@ -55,7 +56,7 @@ class JsonGoogleOptionParserSpec(_system: ActorSystem) extends TestKit(_system) 
   "send back" taggedAs Slow in {
     val blackboard = system.actorOf(Props.create(classOf[MockGoogleOptionBlackboard], testActor), "blackboard")
     val entityParser = _system.actorOf(Props.create(classOf[EntityParser], blackboard))
-    val contentType = ContentType(MediaTypes.`application/json`, HttpCharsets.`UTF-8`)
+    val contentType = ContentTypes.`application/json`
     val entity = HttpEntity(contentType, json.getBytes())
     entityParser ! EntityMessage("json:GO", entity)
     val msg = expectMsgClass(5.seconds, classOf[QueryResponse])

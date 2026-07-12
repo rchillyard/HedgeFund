@@ -1,8 +1,9 @@
 package edu.neu.coe.csye7200.actors
 
 import akka.actor.ActorRef
+import akka.http.scaladsl.model._
+import akka.util.ByteString
 import edu.neu.coe.csye7200.model.{GoogleModel, Model}
-import spray.http._
 
 import scala.util._
 
@@ -41,8 +42,9 @@ class JsonGoogleParser(blackboard: ActorRef) extends BlackboardActor(blackboard)
 
 object JsonGoogleParser {
 
-  import spray.httpx.SprayJsonSupport._
-  import spray.httpx.unmarshalling._
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling.Deserialized
+  import edu.neu.coe.csye7200.http.MalformedContent
   import spray.json.{DefaultJsonProtocol, _}
 
   type Results = Seq[Map[String, Option[String]]]
@@ -60,23 +62,16 @@ object JsonGoogleParser {
     * @param entity the entity extracted from the Http Response
     * @return the deserialized version
     */
-  def decode(entity: HttpEntity): Deserialized[Results] = {
-    import spray.httpx.unmarshalling._
-    val mediaTypeTextHtml = MediaTypes.`text/html`
-    val mediaTypeJson = MediaTypes.`application/json`
-    val contentTypeJson = ContentType(mediaTypeJson, HttpCharsets.`UTF-8`)
-    //    val contentTypeText = ContentType(mediaTypeTextHtml, HttpCharsets.`ISO-8859-1`)
-    entity match {
-      case HttpEntity.NonEmpty(`contentTypeJson`, _) =>
-        entity.as[Results]
-      case HttpEntity.NonEmpty(ContentType(`mediaTypeTextHtml`, x), y) =>
-        HttpEntity(ContentType(mediaTypeJson, x), fix(y)).as[Results]
-      case HttpEntity.NonEmpty(x, _) => Left(MalformedContent(s"logic error: contentType=$x"))
-      case _ => Left(MalformedContent("logic error"))
+  def decode(entity: HttpEntity.Strict): Deserialized[Results] =
+    entity.contentType.mediaType match {
+      case MediaTypes.`application/json` =>
+        JsonUnmarshalling.decode[Results](entity.data)
+      case MediaTypes.`text/html` =>
+        JsonUnmarshalling.decode[Results](fix(entity.data))
+      case x => Left(MalformedContent(s"logic error: contentType=$x"))
     }
-  }
 
-  def fix(data: HttpData): Array[Byte] = fix(data.asString).getBytes
+  def fix(data: ByteString): String = fix(data.utf8String)
 
   def fix(s: String): String = s.substring(3)
 

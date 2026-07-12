@@ -17,7 +17,7 @@ import scala.xml.{Elem, NodeSeq, XML}
 abstract class Reader extends Actor {
   val log: LoggingAdapter = Logging(context.system, this)
 
-  def print(feed: RssFeed) {
+  def print(feed: RssFeed): Unit = {
     println(feed.latest)
   }
 }
@@ -55,7 +55,7 @@ class AtomReader extends Reader {
     }
   }
 
-  def receive(): PartialFunction[Any, Unit] = {
+  def receive: PartialFunction[Any, Unit] = {
     case xml: Elem =>
       extract(xml) match {
         case head :: _ => print(head)
@@ -88,7 +88,7 @@ class XmlReader extends Reader {
     }
   }
 
-  def receive(): PartialFunction[Any, Unit] = {
+  def receive: PartialFunction[Any, Unit] = {
     case xml: Elem =>
       extract(xml) match {
         case head :: _ => print(head)
@@ -100,7 +100,7 @@ class XmlReader extends Reader {
 class RssReader extends Actor {
   val log: LoggingAdapter = Logging(context.system, this)
 
-  def printToFile(f: java.io.File)(op: java.io.PrintWriter => Unit) {
+  def printToFile(f: java.io.File)(op: java.io.PrintWriter => Unit): Unit = {
     val p = new java.io.PrintWriter(f)
     try {
       op(p)
@@ -114,14 +114,14 @@ class RssReader extends Actor {
       case Success(u) =>
         val xml = XML.load(u)
         implicit val timeout: Timeout = Timeout(30.seconds)
-        val actor = if ((xml \\ "channel").length == 0) context.actorOf(Props[AtomReader])
-        else context.actorOf(Props[XmlReader])
+        val actor = if ((xml \\ "channel").length == 0) context.actorOf(Props[AtomReader]())
+        else context.actorOf(Props[XmlReader]())
         actor ! xml
       case Failure(_) =>
     }
   }
 
-  def receive(): PartialFunction[Any, Unit] = {
+  def receive: PartialFunction[Any, Unit] = {
     case path: URL => read(path)
   }
 }
@@ -136,9 +136,9 @@ class SubscriptionReader extends Actor {
     } yield new URL(node.text)
   }
 
-  def receive(): PartialFunction[Any, Unit] = {
+  def receive: PartialFunction[Any, Unit] = {
     case filename: String =>
-      sender ! read(open(filename))
+      sender() ! read(open(filename))
   }
 }
 
@@ -152,12 +152,12 @@ object RssReader {
   def main(args: Array[String]): Unit = {
     val system = ActorSystem("RssReader")
     implicit val timeout: Timeout = Timeout(30.seconds)
-    val subReader = system.actorOf(Props[SubscriptionReader])
+    val subReader = system.actorOf(Props[SubscriptionReader]())
     implicit val dispatcher: ExecutionContextExecutor = system.dispatcher
     for {
       urls <- (subReader ask "subscriptions.xml").mapTo[Seq[URL]]
       url <- urls
-    } system.actorOf(Props[RssReader]) ! url
+    } system.actorOf(Props[RssReader]()) ! url
 
     //system.shutdown()
   }

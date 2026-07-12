@@ -1,7 +1,7 @@
 package edu.neu.coe.csye7200.actors
 
 import akka.actor.{ActorRef, Props}
-import spray.http._
+import akka.http.scaladsl.model._
 
 /**
   * @author robinhillyard
@@ -14,17 +14,17 @@ class HttpReader(blackboard: ActorRef) extends BlackboardActor(blackboard) {
     * @return
     */
   override def receive: PartialFunction[Any, Unit] = {
-    case HttpResult(queryProtocol, request, HttpResponse(status, entity, headers, protocol)) =>
+    case HttpResult(queryProtocol, request, HttpResponse(status, headers, entity: HttpEntity.Strict, protocol)) =>
       log.info("request sent: {}; protocol: {}; response status: {}", request, protocol, status)
       if (status.isSuccess)
         processResponse(entity, headers, queryProtocol)
       else
-        log.error("HTTP transaction error: {}", status.reason)
+        log.error("HTTP transaction error: {}", status.reason())
 
     case m => super.receive(m)
   }
 
-  def processResponse(entity: HttpEntity, headers: List[HttpHeader], protocol: String): Unit = {
+  def processResponse(entity: HttpEntity.Strict, headers: Seq[HttpHeader], protocol: String): Unit = {
     log.debug("response headers: {}; entity: {}", headers, entity)
     entityParser ! EntityMessage(protocol, entity)
   }
@@ -32,4 +32,4 @@ class HttpReader(blackboard: ActorRef) extends BlackboardActor(blackboard) {
 
 // TODO add headers
 // CONSIDER move into Blackboard
-case class EntityMessage(protocol: String, entity: HttpEntity)
+case class EntityMessage(protocol: String, entity: HttpEntity.Strict)

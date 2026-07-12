@@ -22,4 +22,4 @@ class EntityParser(blackboard: ActorRef) extends BlackboardActor(blackboard) {
   }
 }
 
-case class ContentMessage(content: spray.http.HttpEntity)
+case class ContentMessage(content: akka.http.scaladsl.model.HttpEntity.Strict)

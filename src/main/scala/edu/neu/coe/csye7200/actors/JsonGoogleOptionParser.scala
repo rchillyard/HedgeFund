@@ -1,8 +1,9 @@
 package edu.neu.coe.csye7200.actors
 
 import akka.actor.ActorRef
+import akka.http.scaladsl.model._
+import akka.util.ByteString
 import edu.neu.coe.csye7200.model.{GoogleOptionModel, Model}
-import spray.http._
 
 import scala.util._
 
@@ -51,7 +52,7 @@ case class YMD(y: Int, m: Int, d: Int) {
   import com.github.nscala_time.time.Imports._
 
   def asDate(ymd: YMD): DateTime = ymd match {
-    case YMD(a, b, c) => new DateTime(a, b, c)
+    case YMD(a, b, c) => new DateTime(a, b, c, 0, 0)
   }
 }
 
@@ -59,8 +60,9 @@ case class OptionChain(expiry: YMD, expirations: Seq[YMD], puts: Seq[Map[String,
 
 object JsonGoogleOptionParser {
 
-  import spray.httpx.SprayJsonSupport._
-  import spray.httpx.unmarshalling._
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling.Deserialized
+  import edu.neu.coe.csye7200.http.MalformedContent
   import spray.json.{DefaultJsonProtocol, _}
 
   object MyJsonProtocol extends DefaultJsonProtocol with NullOptions {
@@ -77,19 +79,15 @@ object JsonGoogleOptionParser {
     * @param entity the entity extracted from the Http Response
     * @return the deserialized version
     */
-  def decode(entity: HttpEntity): Deserialized[OptionChain] = {
-    //    import spray.httpx.unmarshalling._
-    val contentType = ContentType(MediaTypes.`application/json`, HttpCharsets.`UTF-8`)
-    entity match {
-      case HttpEntity.NonEmpty(`contentType`, y) =>
-        HttpEntity(contentType, fix(y)).as[OptionChain]
-      case HttpEntity.NonEmpty(s, _) =>
-        Left(MalformedContent(s"entity content type: $s"))
-      case _ => Left(MalformedContent("logic error"))
+  def decode(entity: HttpEntity.Strict): Deserialized[OptionChain] =
+    entity.contentType.mediaType match {
+      case MediaTypes.`application/json` =>
+        JsonUnmarshalling.decode[OptionChain](fix(entity.data))
+      case x =>
+        Left(MalformedContent(s"entity content type: $x"))
     }
-  }
 
-  def fix(data: HttpData): Array[Byte] = fix(data.asString).getBytes
+  def fix(data: ByteString): String = fix(data.utf8String)
 
   def fix(s: String): String = """([^,{:\s]+):""".r.replaceAllIn(s, """"$1":""")
 

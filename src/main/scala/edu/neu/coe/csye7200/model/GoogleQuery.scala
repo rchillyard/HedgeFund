@@ -1,7 +1,7 @@
 package edu.neu.coe.csye7200.model
 
 import edu.neu.coe.csye7200.http.UriGet
-import spray.http.Uri
+import akka.http.scaladsl.model.Uri
 
 /**
   * @author robinhillyard
@@ -12,7 +12,7 @@ case class GoogleQuery(exchange: String) extends Query {
 
   def createQuery(symbols: List[String]): Uri = {
     //https://www.google.com/finance/option_chain?q=NASDAQ%3AMSFT&ei=qw-xVbnzC9DDeJWDLQ
-    val symbolList = symbols mkString ","
+    val symbolList = symbols.mkString(",")
     val exchangeName = if (exchange != null) s"$exchange:" else ""
     val queryParams = Map("q" -> s"$exchangeName$symbolList", "client" -> "ig")
     uriGet.get(GoogleQuery.server, GoogleQuery.path, queryParams)

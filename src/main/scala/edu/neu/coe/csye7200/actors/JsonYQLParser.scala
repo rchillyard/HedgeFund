@@ -1,8 +1,8 @@
 package edu.neu.coe.csye7200.actors
 
 import akka.actor.ActorRef
+import akka.http.scaladsl.model.HttpEntity
 import edu.neu.coe.csye7200.model.{Model, YQLModel}
-import spray.http._
 
 import scala.util._
 
@@ -41,8 +41,8 @@ class JsonYQLParser(blackboard: ActorRef) extends BlackboardActor(blackboard) {
 
 object JsonYQLParser {
 
-  import spray.httpx.SprayJsonSupport._
-  import spray.httpx.unmarshalling._
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling.Deserialized
   import spray.json.{DefaultJsonProtocol, _}
 
   case class Response(query: Query)
@@ -84,6 +84,6 @@ object JsonYQLParser {
 
   import MyJsonProtocol._
 
-  def decode(entity: HttpEntity): Deserialized[Response] = entity.as[Response]
+  def decode(entity: HttpEntity.Strict): Deserialized[Response] = JsonUnmarshalling.decode[Response](entity.data)
 
 }

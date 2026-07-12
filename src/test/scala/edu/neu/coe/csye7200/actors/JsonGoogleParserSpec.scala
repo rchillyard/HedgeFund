@@ -1,26 +1,27 @@
 package edu.neu.coe.csye7200.actors
 
 import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.http.scaladsl.model._
 import akka.testkit._
 import edu.neu.coe.csye7200.actors.JsonGoogleParser.Results
 import edu.neu.coe.csye7200.model.Model
 import org.scalatest._
-import spray.http._
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.wordspec.AnyWordSpecLike
 
 import scala.concurrent.duration._
 import scala.io.Source
-import scala.language.postfixOps
 
 /**
   * This specification really tests much of the HedgeFund app but because it particularly deals with
   * processing data from the YQL (Yahoo Query Language) using JSON, we call it by its given name.
   */
 class JsonGoogleParserSpec(_system: ActorSystem) extends TestKit(_system) with ImplicitSender
-  with WordSpecLike with Matchers with Inside with BeforeAndAfterAll {
+  with AnyWordSpecLike with Matchers with Inside with BeforeAndAfterAll {
 
   def this() = this(ActorSystem("JsonGoogleParserSpec"))
 
-  override def afterAll {
+  override def afterAll(): Unit = {
     TestKit.shutdownActorSystem(system)
   }
 
@@ -40,9 +41,8 @@ class JsonGoogleParserSpec(_system: ActorSystem) extends TestKit(_system) with I
     val entity = HttpEntity(contentTypeText, json.getBytes())
     val ok = JsonGoogleParser.decode(entity) match {
       case Right(x) =>
-        val z = x
-        x.seq.length should equal(2)
-        val quotes = x.seq
+        x.length should equal(2)
+        val quotes = x
         quotes.head.get("t") should matchPattern { case Some(Some("AAPL")) => }
 
       case Left(x) =>
@@ -77,7 +77,7 @@ class MockGoogleUpdateLogger(blackboard: ActorRef) extends UpdateLogger(blackboa
     model.getKey("price") match {
       case Some(p) =>
         // sender is the MarketData actor
-        val future = sender ? SymbolQuery(identifier, List(p))
+        val future = sender() ? SymbolQuery(identifier, List(p))
         val result = Await.result(future, timeout.duration).asInstanceOf[QueryResponse]
         result.attributes foreach {
           case (k, v) =>

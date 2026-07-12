@@ -1,27 +1,28 @@
 package edu.neu.coe.csye7200.http
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.ActorRef
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model._
 import edu.neu.coe.csye7200.actors.HttpResult
-import spray.client.pipelining._
-import spray.http._
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent._
+import scala.concurrent.duration._
 
 /**
   * CONSIDER making this an Actor
   *
   * @author robinhillyard
   */
-case class HttpTransaction(queryProtocol: String, request: HttpRequest, actor: ActorRef) {
+case class HttpTransaction(queryProtocol: String, request: HttpRequest, actor: ActorRef)(implicit system: akka.actor.ActorSystem, ec: ExecutionContext) {
 
   import akka.pattern.pipe
 
-  implicit val system: ActorSystem = ActorSystem()
+  val strictEntityTimeout: FiniteDuration = 30.seconds
 
-  val pipeline: HttpRequest => Future[HttpResponse] = sendReceive
-
-  val response: Future[HttpResponse] = pipeline(request)
+  val response: Future[HttpResponse] =
+    Http(system).singleRequest(request).flatMap { r =>
+      r.entity.toStrict(strictEntityTimeout).map(strict => r.withEntity(strict))
+    }
 
   response map { x => HttpResult(queryProtocol, request, x) } pipeTo actor
 

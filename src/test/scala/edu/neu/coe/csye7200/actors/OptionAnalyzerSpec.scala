@@ -4,7 +4,9 @@ import akka.actor.{ActorRef, ActorSystem, Props, actorRef2Scala}
 import akka.testkit._
 import edu.neu.coe.csye7200.model.GoogleOptionModel
 import org.scalatest.tagobjects.Slow
-import org.scalatest.{BeforeAndAfterAll, Inside, Matchers, WordSpecLike}
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.wordspec.AnyWordSpecLike
+import org.scalatest.{BeforeAndAfterAll, Inside}
 
 import scala.concurrent.duration._
 
@@ -13,11 +15,11 @@ import scala.concurrent.duration._
   * processing data from the YQL (Yahoo Query Language) using JSON, we call it by its given name.
   */
 class OptionAnalyzerSpec(_system: ActorSystem) extends TestKit(_system) with ImplicitSender
-  with WordSpecLike with Matchers with Inside with BeforeAndAfterAll {
+  with AnyWordSpecLike with Matchers with Inside with BeforeAndAfterAll {
 
   def this() = this(ActorSystem("OptionAnalyzerSpec"))
 
-  override def afterAll {
+  override def afterAll(): Unit = {
     TestKit.shutdownActorSystem(system)
   }
 

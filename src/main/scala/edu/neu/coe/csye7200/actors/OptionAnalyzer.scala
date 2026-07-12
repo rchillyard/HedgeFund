@@ -34,7 +34,7 @@ class OptionAnalyzer(blackboard: ActorRef) extends BlackboardActor(blackboard) {
     case m => super.receive(m)
   }
 
-  override def preStart() {
+  override def preStart(): Unit = {
     rules = OptionAnalyzer.getRules(log)
     properties = OptionAnalyzer.getProperties
   }
@@ -138,12 +138,12 @@ object OptionAnalyzer {
     val so = HedgeFund.getSource(sSysProperties)
     so match {
       case Some(s) =>
-        val src = s.getLines
+        val src = s.getLines()
         //    val src = Source.fromFile(sSysProperties).getLines
-    // First line is the header
-    val headerLine = src.take(1).next
-    val columns = headerLine.split(",")
-    src map { l => columns zip l.split(",") toMap } toList
+        // First line is the header
+        val headerLine = src.take(1).next()
+        val columns = headerLine.split(",")
+        (src map { l => (columns zip l.split(",")).toMap }).toList
       case None =>
         System.err.println(s"problem getting properties: $sSysProperties"); List()
     }
