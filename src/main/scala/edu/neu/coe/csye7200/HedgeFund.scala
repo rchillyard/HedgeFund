@@ -1,15 +1,19 @@
 package edu.neu.coe.csye7200
 
+import akka.Done
+import akka.actor.CoordinatedShutdown
 import akka.actor.typed.scaladsl.adapter._
 import akka.actor.typed.{ActorRef, ActorSystem}
 import akka.http.scaladsl.Http
 import com.typesafe.config.{Config, ConfigFactory}
 import edu.neu.coe.csye7200.actors.{ExternalLookup, HedgeFundBlackboard, HedgeFundCommand, PortfolioUpdate}
+import edu.neu.coe.csye7200.cache.PriceCacheApp
 import edu.neu.coe.csye7200.model.GoogleOptionQuery
 import edu.neu.coe.csye7200.portfolio.{Portfolio, PortfolioParser}
-import edu.neu.coe.csye7200.providers.ProviderRegistry
+import edu.neu.coe.csye7200.providers.{AlphaVantageProvider, ProviderRegistry}
 import org.slf4j.{Logger, LoggerFactory}
 
+import java.util.concurrent.TimeUnit
 import scala.concurrent.Await
 import scala.concurrent.duration.FiniteDuration
 import scala.io.Source
@@ -101,33 +105,57 @@ object HedgeFund {
 
 }
 
+/**
+  * Long-running entry point: builds an expiring per-symbol price cache (see the `cache`
+  * package) and a portfolio rule-check loop on top of it, replacing the old one-shot
+  * `HedgeFund.startup`/`HedgeFundBlackboard` fetch-then-exit flow for stock quotes (that flow
+  * itself, and the actors it drives, are untouched and still fully tested -- they're just no
+  * longer invoked from here). Runs until stopped (e.g. Ctrl+C); Typed's `ActorSystem` installs
+  * a JVM shutdown hook by default, which triggers `CoordinatedShutdown` automatically.
+  */
 @main def hedgeFundApp(): Unit = {
   val config = ConfigFactory.load()
   println(s"""${config.getString("name")}, ${config.getString("appVersion")}""")
-  implicit val system: ActorSystem[HedgeFundCommand] = ActorSystem(HedgeFundBlackboard(), "HedgeFund")
-  HedgeFund.startup(config) match {
-    case Success(_) =>
-      // startup only fires the ExternalLookup pipeline off asynchronously (tell, not ask) --
-      // terminate() below begins shutdown immediately, so without a real pause here almost
-      // none of the actual HTTP round trips (to whichever provider is configured) get a
-      // chance to complete before the actor system tears down.
-      Thread.sleep(20000)
+
+  // Validated once, eagerly, so a missing API key fails fast and clearly at startup rather
+  // than lazily inside whichever PriceCacheActor happens to attempt the first fetch.
+  Try(AlphaVantageProvider.query) match {
     case Failure(x) =>
       println(s"startup failed: ${x.getMessage}")
       HedgeFund.logger.error("startup failed: {}", x.getMessage)
-  }
-  // Shut down Akka HTTP's connection pools deliberately before tearing down the actor
-  // system -- otherwise terminate() kills the pool actors abruptly (mid keep-alive) rather
-  // than closing them properly, producing "Unexpected termination of TLS actor" warnings.
-  // The extra pause after this call matters: shutdownAllConnectionPools()'s Future resolves
-  // once the pool stops handing out new work, which is not the same instant as the underlying
-  // TLS close-notify handshake actually finishing flushing over the network to each remote
-  // server -- confirmed by direct testing that omitting this pause still produced the warning.
-  Try(Await.result(Http(system.toClassic).shutdownAllConnectionPools(), FiniteDuration(10, "seconds"))) match {
+
     case Success(_) =>
-    case Failure(x) => HedgeFund.logger.warn("connection pool shutdown failed: {}", x.getMessage)
+      HedgeFund.getPortfolio(config) match {
+        case None =>
+          println("startup failed: could not load portfolio")
+          HedgeFund.logger.error("startup failed: could not load portfolio")
+
+        case Some(portfolio) =>
+          def durationOf(key: String): FiniteDuration = FiniteDuration(config.getDuration(key).toNanos, TimeUnit.NANOSECONDS)
+
+          val ttl = durationOf("priceCache.ttl")
+          val ruleCheckInterval = durationOf("ruleCheck.interval")
+
+          val system: ActorSystem[Nothing] =
+            ActorSystem(PriceCacheApp(portfolio, ttl, ruleCheckInterval, HedgeFund.logger), "HedgeFundPriceCache")
+
+          // Same graceful-shutdown fix as the old startup flow needed (see git history), just
+          // registered as a CoordinatedShutdown task instead of run inline, since shutdown here
+          // is triggered externally (Ctrl+C) rather than by an explicit system.terminate() call.
+          implicit val ec: scala.concurrent.ExecutionContext = system.executionContext
+          CoordinatedShutdown(system.toClassic).addTask(CoordinatedShutdown.PhaseServiceUnbind, "shutdown-connection-pools") { () =>
+            Http(system.toClassic).shutdownAllConnectionPools().map { _ =>
+              Thread.sleep(2000)
+              Done
+            }
+          }
+
+          // Without this, the @main method's body simply returns right after spawning the
+          // actor system (nothing above blocks), so the JVM -- or sbt's runMain in particular --
+          // tears the whole thing down within a couple of seconds instead of actually running
+          // until Ctrl+C. Blocks the main thread until the JVM shutdown hook eventually calls
+          // system.terminate() (installed automatically by Typed's ActorSystem).
+          Await.ready(system.whenTerminated, scala.concurrent.duration.Duration.Inf)
+      }
   }
-  Thread.sleep(2000)
-  system.terminate()
-  Await.ready(system.whenTerminated, FiniteDuration(5, "seconds"))
 }

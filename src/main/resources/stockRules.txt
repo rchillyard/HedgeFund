@@ -1,0 +1,13 @@
+# stockRules.txt
+#
+# Defines the buy/sell rules evaluated by RuleCheckActor whenever a portfolio position's
+# price changes since the last check cycle.
+#
+# Variables available (see StockCandidate): price, previousPrice, change (= price - previousPrice)
+#
+# As with rules.txt, you may combine any number of (parenthetical) expressions with
+# operators: & (and) or | (or), provided that if there are multiple closing parentheses,
+# these must be at the rightmost end of the string.
+
+buy="change < -2"
+sell="change > 2"
