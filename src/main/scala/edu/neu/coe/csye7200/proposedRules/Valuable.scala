@@ -2,10 +2,10 @@
  * Copyright (c) 2018. Phasmid Software
  */
 
-package edu.neu.coe.csye7200.rules
+package edu.neu.coe.csye7200.proposedRules
 
 
-import edu.neu.coe.csye7200.rules.Orderable.{OrderableDouble, OrderableInt, OrderableLong}
+import edu.neu.coe.csye7200.proposedRules.Orderable.{OrderableDouble, OrderableInt, OrderableLong}
 
 import scala.util.{Failure, Success, Try}
 

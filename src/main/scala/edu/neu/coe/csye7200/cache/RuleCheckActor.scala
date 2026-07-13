@@ -3,7 +3,7 @@ package edu.neu.coe.csye7200.cache
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.util.Timeout
-import edu.neu.coe.csye7200.oldrules.Predicate
+import edu.neu.coe.csye7200.rules.Predicate
 import edu.neu.coe.csye7200.portfolio.Portfolio
 import org.slf4j.Logger
 

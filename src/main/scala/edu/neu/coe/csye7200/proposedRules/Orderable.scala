@@ -2,12 +2,12 @@
  * Copyright (c) 2018. Phasmid Software
  */
 
-package edu.neu.coe.csye7200.rules
+package edu.neu.coe.csye7200.proposedRules
 
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-import edu.neu.coe.csye7200.rules.FP._
+import edu.neu.coe.csye7200.proposedRules.FP._
 
 import scala.util._
 

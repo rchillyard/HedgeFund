@@ -1,12 +1,12 @@
 package edu.neu.coe.csye7200.cache
 
-import edu.neu.coe.csye7200.oldrules.Candidate
+import edu.neu.coe.csye7200.rules.Candidate
 
 /**
   * A `Candidate` representing a stock symbol's latest price change, evaluated against the
   * `buy`/`sell` rules in `stockRules.txt` via the existing `Predicate`/`SimpleRule` engine --
   * the same mechanism `OptionAnalyzer` already uses for option rules, just with a different
-  * `Candidate` shape (see `oldrules/Candidate.scala`).
+  * `Candidate` shape (see `rules/Candidate.scala`).
   *
   * @author robinhillyard
   */

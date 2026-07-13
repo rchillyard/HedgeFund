@@ -1,7 +1,7 @@
 package edu.neu.coe.csye7200.cache
 
 import com.typesafe.config.ConfigFactory
-import edu.neu.coe.csye7200.oldrules.{Predicate, SimpleRule}
+import edu.neu.coe.csye7200.rules.{Predicate, SimpleRule}
 import org.slf4j.Logger
 
 import scala.util.Try

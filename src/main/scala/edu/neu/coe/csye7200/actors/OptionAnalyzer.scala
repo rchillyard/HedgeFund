@@ -4,7 +4,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import edu.neu.coe.csye7200.HedgeFund
 import edu.neu.coe.csye7200.model.{MapUtils, Model}
-import edu.neu.coe.csye7200.oldrules.{Candidate, Predicate, SimpleRule}
+import edu.neu.coe.csye7200.rules.{Candidate, Predicate, SimpleRule}
 import org.slf4j.Logger
 
 import scala.language.postfixOps
