@@ -1,6 +1,6 @@
 package edu.neu.coe.csye7200.model
 
-import spray.http.Uri
+import akka.http.scaladsl.model.Uri
 
 /**
   * @author robinhillyard

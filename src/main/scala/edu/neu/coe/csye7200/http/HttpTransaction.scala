@@ -1,29 +1,32 @@
 package edu.neu.coe.csye7200.http
 
-import akka.actor.{ActorRef, ActorSystem}
-import edu.neu.coe.csye7200.actors.HttpResult
-import spray.client.pipelining._
-import spray.http._
+import akka.actor.typed.ActorRef
+import akka.actor.typed.scaladsl.adapter._
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model._
+import edu.neu.coe.csye7200.actors.{HttpReaderCommand, HttpResult}
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent._
+import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 
 /**
   * CONSIDER making this an Actor
   *
   * @author robinhillyard
   */
-case class HttpTransaction(queryProtocol: String, request: HttpRequest, actor: ActorRef) {
+case class HttpTransaction(queryProtocol: String, request: HttpRequest, actor: ActorRef[HttpReaderCommand])(implicit system: akka.actor.typed.ActorSystem[_], ec: ExecutionContext) {
 
-  import akka.pattern.pipe
+  val strictEntityTimeout: FiniteDuration = 30.seconds
 
-  implicit val system: ActorSystem = ActorSystem()
+  val response: Future[HttpResponse] =
+    Http(system.toClassic).singleRequest(request).flatMap { r =>
+      r.entity.toStrict(strictEntityTimeout).map(strict => r.withEntity(strict))
+    }
 
-  val pipeline: HttpRequest => Future[HttpResponse] = sendReceive
-
-  val response: Future[HttpResponse] = pipeline(request)
-
-  response map { x => HttpResult(queryProtocol, request, x) } pipeTo actor
+  response.onComplete {
+    case Success(r) => actor ! HttpResult(queryProtocol, request, r)
+    case Failure(ex) => system.log.warn("HttpTransaction failed for protocol {}: {}", queryProtocol, ex.getLocalizedMessage)
+  }
 
 }
-

@@ -1,8 +1,10 @@
 package edu.neu.coe.csye7200.actors
 
-import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
+import akka.http.scaladsl.model._
+import akka.util.ByteString
 import edu.neu.coe.csye7200.model.{GoogleModel, Model}
-import spray.http._
 
 import scala.util._
 
@@ -11,38 +13,39 @@ import scala.util._
   *
   * @author robinhillyard
   */
-class JsonGoogleParser(blackboard: ActorRef) extends BlackboardActor(blackboard) {
-
-  val model: Model = new GoogleModel
-
-  override def receive: PartialFunction[Any, Unit] = {
-    case ContentMessage(entity) =>
-      log.debug("JsonGoogleParser received ContentMessage")
-      JsonGoogleParser.decode(entity) match {
-        case Right(results) => processQuote(results)
-        case Left(message) => log.warning("Decoding error: " + message)
-      }
-    case m => super.receive(m)
-  }
-
-  def processQuote(quotes: Seq[Map[String, Option[String]]]): Unit = quotes foreach { q => processInstrument(q) }
-
-  def processInstrument(quote: Map[String, Option[String]]): Unit = model.getKey("symbol") match {
-    case Some(s) =>
-      quote.get(s) match {
-        case Some(Some(symbol)) => updateMarket(symbol, quote)
-        case _ => log.warning(s"$s is undefined in quote")
-      }
-    case None => log.warning("'symbol' is not defined in model")
-  }
-
-  def updateMarket(symbol: String, quote: Map[String, Option[String]]): Unit = blackboard ! KnowledgeUpdate(model, symbol, quote flatMap { case (k, Some(v)) => Option(k -> v); case _ => None })
-}
-
 object JsonGoogleParser {
 
-  import spray.httpx.SprayJsonSupport._
-  import spray.httpx.unmarshalling._
+  def apply(blackboard: ActorRef[HedgeFundCommand]): Behavior[ContentMessage] = Behaviors.setup { context =>
+    val model: Model = new GoogleModel
+
+    def processQuote(quotes: Seq[Map[String, Option[String]]]): Unit = quotes foreach { q => processInstrument(q) }
+
+    def processInstrument(quote: Map[String, Option[String]]): Unit = model.getKey("symbol") match {
+      case Some(s) =>
+        quote.get(s) match {
+          case Some(Some(symbol)) => updateMarket(symbol, quote)
+          case _ => context.log.warn(s"$s is undefined in quote")
+        }
+      case None => context.log.warn("'symbol' is not defined in model")
+    }
+
+    def updateMarket(symbol: String, quote: Map[String, Option[String]]): Unit =
+      blackboard ! KnowledgeUpdate(model, symbol, quote flatMap { case (k, Some(v)) => Option(k -> v); case _ => None })
+
+    Behaviors.receiveMessage {
+      case ContentMessage(entity) =>
+        context.log.debug("JsonGoogleParser received ContentMessage")
+        decode(entity) match {
+          case Right(results) => processQuote(results)
+          case Left(message) => context.log.warn("Decoding error: " + message)
+        }
+        Behaviors.same
+    }
+  }
+
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling.Deserialized
+  import edu.neu.coe.csye7200.http.MalformedContent
   import spray.json.{DefaultJsonProtocol, _}
 
   type Results = Seq[Map[String, Option[String]]]
@@ -60,23 +63,16 @@ object JsonGoogleParser {
     * @param entity the entity extracted from the Http Response
     * @return the deserialized version
     */
-  def decode(entity: HttpEntity): Deserialized[Results] = {
-    import spray.httpx.unmarshalling._
-    val mediaTypeTextHtml = MediaTypes.`text/html`
-    val mediaTypeJson = MediaTypes.`application/json`
-    val contentTypeJson = ContentType(mediaTypeJson, HttpCharsets.`UTF-8`)
-    //    val contentTypeText = ContentType(mediaTypeTextHtml, HttpCharsets.`ISO-8859-1`)
-    entity match {
-      case HttpEntity.NonEmpty(`contentTypeJson`, _) =>
-        entity.as[Results]
-      case HttpEntity.NonEmpty(ContentType(`mediaTypeTextHtml`, x), y) =>
-        HttpEntity(ContentType(mediaTypeJson, x), fix(y)).as[Results]
-      case HttpEntity.NonEmpty(x, _) => Left(MalformedContent(s"logic error: contentType=$x"))
-      case _ => Left(MalformedContent("logic error"))
+  def decode(entity: HttpEntity.Strict): Deserialized[Results] =
+    entity.contentType.mediaType match {
+      case MediaTypes.`application/json` =>
+        JsonUnmarshalling.decode[Results](entity.data)
+      case MediaTypes.`text/html` =>
+        JsonUnmarshalling.decode[Results](fix(entity.data))
+      case x => Left(MalformedContent(s"logic error: contentType=$x"))
     }
-  }
 
-  def fix(data: HttpData): Array[Byte] = fix(data.asString).getBytes
+  def fix(data: ByteString): String = fix(data.utf8String)
 
   def fix(s: String): String = s.substring(3)
 

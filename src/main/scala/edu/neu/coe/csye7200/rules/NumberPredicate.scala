@@ -1,4 +1,4 @@
-package edu.neu.coe.csye7200.oldrules
+package edu.neu.coe.csye7200.rules
 
 import scala.util._
 

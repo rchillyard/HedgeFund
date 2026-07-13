@@ -1,8 +1,10 @@
 package edu.neu.coe.csye7200.actors
 
-import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
+import akka.http.scaladsl.model._
+import akka.util.ByteString
 import edu.neu.coe.csye7200.model.{GoogleOptionModel, Model}
-import spray.http._
 
 import scala.util._
 
@@ -11,56 +13,45 @@ import scala.util._
   *
   * @author robinhillyard
   */
-class JsonGoogleOptionParser(blackboard: ActorRef) extends BlackboardActor(blackboard) {
-
-  val model: Model = new GoogleOptionModel
-
-  override def receive: PartialFunction[Any, Unit] = {
-    case ContentMessage(entity) =>
-      log.debug("JsonGoogleOptionParser received ContentMessage")
-      JsonGoogleOptionParser.decode(entity) match {
-        case Right(optionChain) => processOptionChain(optionChain)
-        case Left(message) => log.warning("Decoding error: " + message)
-      }
-    case m => super.receive(m)
-  }
-
-  def processOptionChain(optionChain: OptionChain): Unit = {
-    val chainMap = Map("expiry" -> optionChain.expiry, "expirations" -> optionChain.expirations, "underlying_id" -> optionChain.underlying_id, "underlying_price" -> optionChain.underlying_price)
-    optionChain.puts foreach {
-      processPut(_, chainMap)(put = true)
-    }
-    optionChain.puts foreach {
-      processPut(_, chainMap)(put = false)
-    }
-  }
-
-  def processPut(optionDetails: Map[String, String], chainDetails: Map[String, Any])(put: Boolean): Unit = model.getKey("identifier") match {
-    case Some(s) =>
-      optionDetails.get(s) match {
-        case Some(x) =>
-          blackboard ! CandidateOption(model, x, put, optionDetails, chainDetails)
-        case None => log.warning(s"logic error: details does not support key: $s")
-      }
-    case None => log.warning(s"logic error: model ${model.getKey("name")} does not support key: identifier")
-  }
-}
-
-case class YMD(y: Int, m: Int, d: Int) {
-
-  import com.github.nscala_time.time.Imports._
-
-  def asDate(ymd: YMD): DateTime = ymd match {
-    case YMD(a, b, c) => new DateTime(a, b, c)
-  }
-}
-
-case class OptionChain(expiry: YMD, expirations: Seq[YMD], puts: Seq[Map[String, String]], calls: Seq[Map[String, String]], underlying_id: String, underlying_price: Double)
-
 object JsonGoogleOptionParser {
 
-  import spray.httpx.SprayJsonSupport._
-  import spray.httpx.unmarshalling._
+  def apply(blackboard: ActorRef[HedgeFundCommand]): Behavior[ContentMessage] = Behaviors.setup { context =>
+    val model: Model = new GoogleOptionModel
+
+    def processOptionChain(optionChain: OptionChain): Unit = {
+      val chainMap = Map("expiry" -> optionChain.expiry, "expirations" -> optionChain.expirations, "underlying_id" -> optionChain.underlying_id, "underlying_price" -> optionChain.underlying_price)
+      optionChain.puts foreach {
+        processPut(_, chainMap)(put = true)
+      }
+      optionChain.puts foreach {
+        processPut(_, chainMap)(put = false)
+      }
+    }
+
+    def processPut(optionDetails: Map[String, String], chainDetails: Map[String, Any])(put: Boolean): Unit = model.getKey("identifier") match {
+      case Some(s) =>
+        optionDetails.get(s) match {
+          case Some(x) =>
+            blackboard ! CandidateOption(model, x, put, optionDetails, chainDetails)
+          case None => context.log.warn(s"logic error: details does not support key: $s")
+        }
+      case None => context.log.warn(s"logic error: model ${model.getKey("name")} does not support key: identifier")
+    }
+
+    Behaviors.receiveMessage {
+      case ContentMessage(entity) =>
+        context.log.debug("JsonGoogleOptionParser received ContentMessage")
+        decode(entity) match {
+          case Right(optionChain) => processOptionChain(optionChain)
+          case Left(message) => context.log.warn("Decoding error: " + message)
+        }
+        Behaviors.same
+    }
+  }
+
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling
+  import edu.neu.coe.csye7200.http.JsonUnmarshalling.Deserialized
+  import edu.neu.coe.csye7200.http.MalformedContent
   import spray.json.{DefaultJsonProtocol, _}
 
   object MyJsonProtocol extends DefaultJsonProtocol with NullOptions {
@@ -77,20 +68,27 @@ object JsonGoogleOptionParser {
     * @param entity the entity extracted from the Http Response
     * @return the deserialized version
     */
-  def decode(entity: HttpEntity): Deserialized[OptionChain] = {
-    //    import spray.httpx.unmarshalling._
-    val contentType = ContentType(MediaTypes.`application/json`, HttpCharsets.`UTF-8`)
-    entity match {
-      case HttpEntity.NonEmpty(`contentType`, y) =>
-        HttpEntity(contentType, fix(y)).as[OptionChain]
-      case HttpEntity.NonEmpty(s, _) =>
-        Left(MalformedContent(s"entity content type: $s"))
-      case _ => Left(MalformedContent("logic error"))
+  def decode(entity: HttpEntity.Strict): Deserialized[OptionChain] =
+    entity.contentType.mediaType match {
+      case MediaTypes.`application/json` =>
+        JsonUnmarshalling.decode[OptionChain](fix(entity.data))
+      case x =>
+        Left(MalformedContent(s"entity content type: $x"))
     }
-  }
 
-  def fix(data: HttpData): Array[Byte] = fix(data.asString).getBytes
+  def fix(data: ByteString): String = fix(data.utf8String)
 
   def fix(s: String): String = """([^,{:\s]+):""".r.replaceAllIn(s, """"$1":""")
 
 }
+
+case class YMD(y: Int, m: Int, d: Int) {
+
+  import com.github.nscala_time.time.Imports._
+
+  def asDate(ymd: YMD): DateTime = ymd match {
+    case YMD(a, b, c) => new DateTime(a, b, c, 0, 0)
+  }
+}
+
+case class OptionChain(expiry: YMD, expirations: Seq[YMD], puts: Seq[Map[String, String]], calls: Seq[Map[String, String]], underlying_id: String, underlying_price: Double)

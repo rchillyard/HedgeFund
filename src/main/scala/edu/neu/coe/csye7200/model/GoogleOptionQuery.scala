@@ -1,7 +1,7 @@
 package edu.neu.coe.csye7200.model
 
 import edu.neu.coe.csye7200.http.UriGet
-import spray.http.Uri
+import akka.http.scaladsl.model.Uri
 
 
 /**
@@ -12,7 +12,7 @@ case class GoogleOptionQuery() extends Query {
   val uriGet = new UriGet()
 
   def createQuery(symbols: List[String]): Uri = {
-    val symbolList = symbols mkString ","
+    val symbolList = symbols.mkString(",")
     val queryParams = Map("q" -> s"$symbolList", "output" -> "json")
     uriGet.get(GoogleOptionQuery.server, GoogleOptionQuery.path, queryParams)
   }

@@ -25,5 +25,5 @@ case class AtomRssFeed(title: String, link: String, desc: String, items: Seq[Rss
 case class XmlRssFeed(title: String, link: String, desc: String, language: String, items: Seq[RssItem]) extends RssFeed
 
 case class RssItem(title: String, link: String, desc: String, date: Date, guid: String) {
-  override def toString: String = date + " " + title
+  override def toString: String = date.toString + " " + title
 }

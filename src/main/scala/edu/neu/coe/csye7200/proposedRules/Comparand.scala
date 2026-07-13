@@ -2,7 +2,7 @@
  * Copyright (c) 2018. Phasmid Software
  */
 
-package edu.neu.coe.csye7200.rules
+package edu.neu.coe.csye7200.proposedRules
 
 import scala.util.Try
 
